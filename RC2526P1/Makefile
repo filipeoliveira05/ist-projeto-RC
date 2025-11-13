@@ -3,11 +3,11 @@ CFLAGS=-Wall -g
 
 all: user ES
 
-user: user.c
-    $(CC) $(CFLAGS) -o user user.c
+user: user.c structures.h
+	$(CC) $(CFLAGS) -o user user.c
 
-ES: server.c
-    $(CC) $(CFLAGS) -o ES server.c
+ES: server.c structures.h
+	$(CC) $(CFLAGS) -o ES server.c
 
 clean:
-    rm -f user ES
+	rm -f user ES
