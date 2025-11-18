@@ -26,7 +26,7 @@ attempt or, in case the UID was not yet present at the ES, it registers a new us
 - Create a new Event (create). The User application sends a message to the ES asking
 to create a new event, providing a short event name (represented with up to 10
 alphanumerical characters), a file (an image or other type of file) describing the event,
-the event date (represented as dd-mm-yyyy), and the number of available
+the event date and time (represented as dd-mm-yyyy hh:mm), and the number of available
 seats/attendees (represented with number, from a minimum of 10 to a maximum of
 999). In reply, the ES informs if the request was successful, and the assigned event
 identifier, EID, a 3-digit number.
@@ -45,7 +45,7 @@ will reply with the requested list, or an indication that no active events are a
 
 - Show event (show). The user asks the ES about the description of a selected event,
 and its reservation status. The ES will reply with information about the event,
-including its name, date, the number of available seats, and the number of reservations
+including its name, date and time, the number of available seats, and the number of reservations
 done, as well as the file describing the event.
 
 - Reserve an event (reserve). The User application asks the ES to make a reservation
@@ -135,7 +135,7 @@ involving communication with the ES.
 User application establishes a TCP session with the ES and sends a message
 asking to create a new event, whose short description name is name, providing
 the file describing the event, stored in the file event_fname, indicating the date
-of the event, event_date, and the number of people who can attend the event,
+and time (dd-mm-yyyy hh:mm) of the event, event_date, and the number of people who can attend the event,
 num_attendees. the file event_fname should exist in the same folder.
 In reply, the ES sends a message indicating whether the request was successful,
 and the assigned event identifier, EID, which should be displayed to the user.
@@ -279,7 +279,7 @@ j) RMR status[ EID date value]*
 In reply to a LMR request, the ES reply status is NOK if user UID has not made
 any reservation. If the user is not logged in, the reply status is NLG. If the user
 UID has made some reservations, the reply status is OK and a list of the
-identifiers EID along with the date of the event (format: dd-mm-yyyy), and the
+identifiers EID along with the date and time of the reservation (format: dd-mm-yyyy hh:mm:ss), and the
 number of places reserved (value) by user UID. value is an integer between
 1 and 999. If the password is incorrect the reply status is WRP.
 
@@ -304,7 +304,7 @@ Following the create command the User application opens a TCP connection
 with the ES and asks to create a new event. The information sent includes:
 - a short description name (a single word): name (format: maximum
 of 10 characters – alphanumeric only)
-- the date of the event: event_date (format: mm-dd-yyyy)
+- the date and time of the event: event_date (format: dd-mm-yyyy hh:mm)
 - the number of places to book: attendance_size (10 to 999);
 - the filename where a description of the event is included: Fname
 - the file size in bytes: Fsize (maximum size is 10 MB (10.10^6 B))
@@ -348,7 +348,7 @@ state and date for all events, separated by single spaces, is sent by the ES.
 state takes value 1 if the event is in the future and is not sold out, 0 if the event
 is in the past, 2 if the event is in the future but is sold out, or 3 if the event was
 closed by the user UID. Event_date is the date of the event in the format:
-dd-mm-yyyy. The server ES sends “\n” as an indication of the end of the list. The
+dd-mm-yyyy hh:mm. The server ES sends “\n” as an indication of the end of the list. The
 User continues receiving the list, till it receives “\n”, then the User closes the TCP
 connection with the ES.
 
@@ -362,7 +362,7 @@ In reply to a SED request the ES replies with status = OK and sends a file
 containing the description of the event. The information sent includes:
 - the owner of the event UID;
 - the event name name;
-- event date event_date;
+- event date event_date (format: dd-mm-yyyy hh:mm);
 - the total number of places in the event: attendance_size (10 to 999);
 - the number of seats reserved Seats_reserved;
 - the filename Fname;
