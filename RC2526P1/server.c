@@ -18,6 +18,49 @@ void handle_error(const char *msg) {
     exit(1);
 }
 
+// --- Funções Auxiliares para Gestão de Utilizadores ---
+
+/*
+ * Procura um user na linked list pelo seu UID.
+ * Retorna um pointer para o user se encontrado, ou NULL caso contrário.
+ */
+User* find_user_by_uid(ServerState *state, const char *uid) {
+    User* current = state->users;
+    while (current != NULL) {
+        if (strcmp(current->uid, uid) == 0) {
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
+}
+
+/*
+ * Adiciona um novo user à linked list de users do servidor.
+ * Retorna um pointer para o novo user criado.
+ */
+User* add_user(ServerState *state, const char *uid, const char *password) {
+    User* new_user = (User*)malloc(sizeof(User));
+    if (new_user == NULL) {
+        handle_error("Erro ao alocar memória para novo user");
+    }
+
+    strncpy(new_user->uid, uid, sizeof(new_user->uid) - 1);
+    new_user->uid[sizeof(new_user->uid) - 1] = '\0';
+
+    strncpy(new_user->password, password, sizeof(new_user->password) - 1);
+    new_user->password[sizeof(new_user->password) - 1] = '\0';
+
+    new_user->is_logged_in = true; // Novo user é automaticamente logado
+    new_user->next = state->users; // Adiciona no início da linked list
+    state->users = new_user;
+
+    return new_user;
+}
+
+// ----------------------------------------------------
+
+
 int main(int argc, char *argv[]) {
     int opt;
     int port = DEFAULT_PORT;
@@ -42,6 +85,12 @@ int main(int argc, char *argv[]) {
     if (verbose) {
         printf("Modo Verbose ativado.\n");
     }
+
+    // Inicializar o estado global do servidor
+    ServerState server_data;
+    server_data.users = NULL;
+    server_data.events = NULL;
+    server_data.next_eid = 1; // EIDs começam em 1
 
     // --- Fase 2: Criação do Socket UDP ---
     int udp_fd;
@@ -68,6 +117,10 @@ int main(int argc, char *argv[]) {
     // --- Fase 4: Loop Principal e recvfrom() ---
     while (1) {
         char buffer[1024];
+        char response_buffer[1024]; // Buffer para a resposta
+        char command[4]; // Para "LIN", "LOU", "UNR", etc.
+        char uid_str[7];
+        char password_str[9];
         client_len = sizeof(client_addr);
 
         ssize_t n = recvfrom(udp_fd, buffer, sizeof(buffer) - 1, 0,
@@ -78,8 +131,57 @@ int main(int argc, char *argv[]) {
 
             if (verbose) {
                 printf("Recebido pedido de %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                printf("Mensagem UDP recebida: %s", buffer);
             }
-            printf("Mensagem UDP recebida: %s", buffer); // O buffer já contém o '\n'
+
+            // Analisar o comando recebido
+            // Usamos sscanf para tentar extrair o comando e os argumentos
+            // Note que o '\n' no final da string é importante para o sscanf
+            if (sscanf(buffer, "%3s %6s %8s\n", command, uid_str, password_str) == 3) {
+                if (strcmp(command, "LIN") == 0) {
+                    // --- Implementar login (LIN/RLI) ---
+                    User* user = find_user_by_uid(&server_data, uid_str);
+                    
+                    if (user != NULL) {
+                        // Utilizador existe
+                        if (strcmp(user->password, password_str) == 0) {
+                            // Password correta
+                            user->is_logged_in = true;
+                            strcpy(response_buffer, "RLI OK\n");
+                            if (verbose) printf("User %s logado com sucesso.\n", uid_str);
+                        } else {
+                            // Password incorreta
+                            strcpy(response_buffer, "RLI NOK\n");
+                            if (verbose) printf("Tentativa de login falhou para %s: password incorreta.\n", uid_str);
+                        }
+                    } else {
+                        // Utilizador não existe, registar novo
+                        add_user(&server_data, uid_str, password_str);
+                        strcpy(response_buffer, "RLI REG\n");
+                        if (verbose) printf("Novo user %s registado e logado.\n", uid_str);
+                    }
+                } else {
+                    // Outros comandos UDP (LOU, UNR, LME, LMR) serão implementados mais tarde
+                    strcpy(response_buffer, "RLI ERR\n"); // Resposta de erro genérica por enquanto
+                    if (verbose) printf("Comando UDP desconhecido ou não implementado: %s\n", command);
+                }
+            } else {
+                // Erro de sintaxe no pedido
+                strcpy(response_buffer, "RLI ERR\n");
+                if (verbose) printf("Erro de sintaxe no pedido UDP: %s", buffer);
+            }
+
+            // Enviar a resposta de volta ao cliente
+            ssize_t sent_bytes = sendto(udp_fd, response_buffer, strlen(response_buffer), 0,
+                                        (struct sockaddr*)&client_addr, client_len);
+            if (sent_bytes == -1) {
+                perror("Erro ao enviar resposta UDP");
+            } else {
+                if (verbose) {
+                    printf("Resposta UDP enviada para %s:%d: %s", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), response_buffer);
+                }
+            }
+
         }
     }
 
