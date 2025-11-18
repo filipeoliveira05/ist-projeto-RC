@@ -21,6 +21,34 @@ void handle_error(const char *msg) {
 // --- Funções Auxiliares para Gestão de Utilizadores ---
 
 /*
+ * Remove um user da linked list de users do servidor.
+ */
+void remove_user(ServerState *state, const char *uid) {
+    User *current = state->users, *prev = NULL;
+
+    // Se o user a remover for o primeiro da lista
+    if (current != NULL && strcmp(current->uid, uid) == 0) {
+        state->users = current->next;
+        free(current);
+        return;
+    }
+
+    // Procura o user na lista
+    while (current != NULL && strcmp(current->uid, uid) != 0) {
+        prev = current;
+        current = current->next;
+    }
+
+    // Se o user não foi encontrado
+    if (current == NULL) return;
+
+    // Remove o user da linked list
+    prev->next = current->next;
+
+    free(current); // Liberta a memória alocada ao user
+}
+
+/*
  * Procura um user na linked list pelo seu UID.
  * Retorna um pointer para o user se encontrado, ou NULL caso contrário.
  */
@@ -141,7 +169,7 @@ int main(int argc, char *argv[]) {
                 if (strcmp(command, "LIN") == 0) {
                     // --- Implementar login (LIN/RLI) ---
                     User* user = find_user_by_uid(&server_data, uid_str);
-                    
+
                     if (user != NULL) {
                         // Utilizador existe
                         if (strcmp(user->password, password_str) == 0) {
@@ -160,6 +188,65 @@ int main(int argc, char *argv[]) {
                         strcpy(response_buffer, "RLI REG\n");
                         if (verbose) printf("Novo user %s registado e logado.\n", uid_str);
                     }
+                
+                } else if (strcmp(command, "LOU") == 0) {
+                    // --- Implementar logout (LOU/RLO) ---
+                    User* user = find_user_by_uid(&server_data, uid_str);
+
+                    if (user != NULL) {
+                        // User existe
+                        if (strcmp(user->password, password_str) == 0) {
+                            // Password correta
+                            if (user->is_logged_in) {
+                                // User está logado, fazer logout
+                                user->is_logged_in = false;
+                                strcpy(response_buffer, "RLO OK\n");
+                                if (verbose) printf("User %s fez logout com sucesso.\n", uid_str);
+                            } else {
+                                // User não está logado
+                                strcpy(response_buffer, "RLO NOK\n");
+                                if (verbose) printf("User %s tentou logout mas não estava logado.\n", uid_str);
+                            }
+                        } else {
+                            // Password incorreta
+                            strcpy(response_buffer, "RLO WRP\n");
+                            if (verbose) printf("Tentativa de logout falhou para %s: password incorreta.\n", uid_str);
+                        }
+                    } else {
+                        // User não existe
+                        strcpy(response_buffer, "RLO UNR\n");
+                        if (verbose) printf("Tentativa de logout falhou: user %s não registado.\n", uid_str);
+                    }
+                
+                } else if (strcmp(command, "UNR") == 0) {
+                    // --- Implementar unregister (UNR/RUR) ---
+                    User* user = find_user_by_uid(&server_data, uid_str);
+
+                    if (user != NULL) {
+                        // User existe
+                        if (strcmp(user->password, password_str) == 0) {
+                            // Password correta
+                            if (user->is_logged_in) {
+                                // User está logado, pode ser removido
+                                remove_user(&server_data, uid_str);
+                                strcpy(response_buffer, "RUR OK\n");
+                                if (verbose) printf("User %s removido com sucesso.\n", uid_str);
+                            } else {
+                                // User não está logado
+                                strcpy(response_buffer, "RUR NOK\n");
+                                if (verbose) printf("Tentativa de unregister falhou para %s: user não estava logado.\n", uid_str);
+                            }
+                        } else {
+                            // Password incorreta
+                            strcpy(response_buffer, "RUR WRP\n");
+                            if (verbose) printf("Tentativa de unregister falhou para %s: password incorreta.\n", uid_str);
+                        }
+                    } else {
+                        // User não existe
+                        strcpy(response_buffer, "RUR UNR\n");
+                        if (verbose) printf("Tentativa de unregister falhou: user %s não registado.\n", uid_str);
+                    }
+
                 } else {
                     // Outros comandos UDP (LOU, UNR, LME, LMR) serão implementados mais tarde
                     strcpy(response_buffer, "RLI ERR\n"); // Resposta de erro genérica por enquanto
