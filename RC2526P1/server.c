@@ -1,3 +1,6 @@
+// Define a fonte POSIX para ter acesso a getopt() e optarg no VS Code
+#define _POSIX_C_SOURCE 200809L
+
 #include "structures.h"
 
 #include <stdio.h>
