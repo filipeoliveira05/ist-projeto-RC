@@ -134,6 +134,85 @@ int main(int argc, char *argv[]) {
 
             close(udp_fd);
 
+        } else if (strcmp(command, "logout") == 0 && num_args == 1) {
+            if (!is_logged_in) {
+                printf("Não há sessão iniciada.\n");
+                continue;
+            }
+
+            // --- Implementar logout ---
+            udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+            if (udp_fd == -1) handle_error("Erro ao criar socket UDP");
+
+            memset(&server_addr, 0, sizeof(server_addr));
+            server_addr.sin_family = AF_INET;
+            memcpy((void*)&server_addr.sin_addr, host->h_addr_list[0], host->h_length);
+            server_addr.sin_port = htons(server_port);
+
+            char request_buffer[128];
+            char response_buffer[128];
+
+            snprintf(request_buffer, sizeof(request_buffer), "LOU %s %s\n", current_uid, current_password);
+            sendto(udp_fd, request_buffer, strlen(request_buffer), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
+
+            socklen_t addr_len = sizeof(server_addr);
+            ssize_t n = recvfrom(udp_fd, response_buffer, sizeof(response_buffer) - 1, 0, (struct sockaddr*)&server_addr, &addr_len);
+
+            if (n > 0) {
+                response_buffer[n] = '\0';
+                if (strncmp(response_buffer, "RLO OK", 6) == 0) {
+                    printf("Logout bem-sucedido.\n");
+                    is_logged_in = false;
+                    memset(current_uid, 0, sizeof(current_uid));
+                    memset(current_password, 0, sizeof(current_password));
+                } else {
+                    printf("Logout falhou. Resposta do servidor: %s", response_buffer);
+                }
+            } else {
+                printf("Não foi possível obter resposta do servidor.\n");
+            }
+            close(udp_fd);
+
+        } else if (strcmp(command, "unregister") == 0 && num_args == 1) {
+            if (!is_logged_in) {
+                printf("Não há sessão iniciada para anular o registo.\n");
+                continue;
+            }
+
+            // --- Implementar unregister ---
+            udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+            if (udp_fd == -1) handle_error("Erro ao criar socket UDP");
+
+            memset(&server_addr, 0, sizeof(server_addr));
+            server_addr.sin_family = AF_INET;
+            memcpy((void*)&server_addr.sin_addr, host->h_addr_list[0], host->h_length);
+            server_addr.sin_port = htons(server_port);
+
+            char request_buffer[128], response_buffer[128];
+            snprintf(request_buffer, sizeof(request_buffer), "UNR %s %s\n", current_uid, current_password);
+            sendto(udp_fd, request_buffer, strlen(request_buffer), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
+
+            // A lógica de resposta para unregister é idêntica à de logout, apenas muda a mensagem de sucesso
+            // e o estado do cliente é limpo da mesma forma.
+            // Para um código mais limpo, isto poderia ser abstraído para uma função.
+            // Por agora, vamos manter explícito para clareza.
+            socklen_t addr_len = sizeof(server_addr);
+            ssize_t n = recvfrom(udp_fd, response_buffer, sizeof(response_buffer) - 1, 0, (struct sockaddr*)&server_addr, &addr_len);
+            if (n > 0) {
+                response_buffer[n] = '\0';
+                if (strncmp(response_buffer, "RUR OK", 6) == 0) {
+                    printf("Registo anulado com sucesso.\n");
+                    is_logged_in = false;
+                    memset(current_uid, 0, sizeof(current_uid));
+                    memset(current_password, 0, sizeof(current_password));
+                } else {
+                    printf("Anulação de registo falhou. Resposta do servidor: %s", response_buffer);
+                }
+            } else {
+                printf("Não foi possível obter resposta do servidor.\n");
+            }
+            close(udp_fd);
+
         } else if (strcmp(command, "exit") == 0) {
             if (is_logged_in) {
                 printf("Utilizador ainda com sessão iniciada. Por favor, execute o comando 'logout' primeiro.\n");
