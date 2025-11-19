@@ -11,6 +11,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/select.h>
+
+// (ALTERAR) Número máximo de clientes TCP que o servidor pode gerir simultaneamente
+#define MAX_TCP_CLIENTS 10
 
 // (ALTERAR) Definir o número do grupo para a porta padrão
 #define GROUP_NUMBER 25
@@ -164,133 +168,205 @@ int main(int argc, char *argv[]) {
 
     printf("Servidor TCP a escutar na porta %d\n", port);
 
-    // --- Fase 4: Loop Principal e recvfrom() ---
+    // --- Fase 3.2 e 3.3: Integrar select() e Gerir Conexões TCP Ativas ---
+    fd_set read_fds;
+    int max_fd_current; // O maior descritor de ficheiro atual para select()
+
+    // Array para guardar os descritores de ficheiro dos sockets TCP dos clientes ativos
+    int client_tcp_fds[MAX_TCP_CLIENTS];
+    for (int i = 0; i < MAX_TCP_CLIENTS; i++) {
+        client_tcp_fds[i] = 0; // Inicializa todos os slots como livres (0 é um fd inválido)
+    }
+
     while (1) {
-        char buffer[1024];
-        char response_buffer[1024]; // Buffer para a resposta
-        char command[4]; // Para "LIN", "LOU", "UNR", etc.
-        char uid_str[7];
-        char password_str[9];
-        client_len = sizeof(client_addr);
+        // Limpar o conjunto de descritores e adicionar os sockets de escuta
+        FD_ZERO(&read_fds);
+        FD_SET(udp_fd, &read_fds);
+        FD_SET(tcp_fd, &read_fds);
+        
+        // Determinar o maior descritor de ficheiro para o select()
+        max_fd_current = (udp_fd > tcp_fd) ? udp_fd : tcp_fd;
 
-        ssize_t n = recvfrom(udp_fd, buffer, sizeof(buffer) - 1, 0,
-                             (struct sockaddr*)&client_addr, &client_len);
-
-        if (n > 0) {
-            buffer[n] = '\0'; // Garantir que a string é terminada
-
-            if (verbose) {
-                printf("Recebido pedido de %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-                printf("Mensagem UDP recebida: %s", buffer);
-            }
-
-            // Analisar o comando recebido
-            // Usamos sscanf para tentar extrair o comando e os argumentos
-            // Note que o '\n' no final da string é importante para o sscanf
-            if (sscanf(buffer, "%3s %6s %8s\n", command, uid_str, password_str) == 3) {
-                if (strcmp(command, "LIN") == 0) {
-                    // --- Implementar login (LIN/RLI) ---
-                    User* user = find_user_by_uid(&server_data, uid_str);
-
-                    if (user != NULL) {
-                        // Utilizador existe
-                        if (strcmp(user->password, password_str) == 0) {
-                            // Password correta
-                            user->is_logged_in = true;
-                            strcpy(response_buffer, "RLI OK\n");
-                            if (verbose) printf("User %s logado com sucesso.\n", uid_str);
-                        } else {
-                            // Password incorreta
-                            strcpy(response_buffer, "RLI NOK\n");
-                            if (verbose) printf("Tentativa de login falhou para %s: password incorreta.\n", uid_str);
-                        }
-                    } else {
-                        // Utilizador não existe, registar novo
-                        add_user(&server_data, uid_str, password_str);
-                        strcpy(response_buffer, "RLI REG\n");
-                        if (verbose) printf("Novo user %s registado e logado.\n", uid_str);
-                    }
-                
-                } else if (strcmp(command, "LOU") == 0) {
-                    // --- Implementar logout (LOU/RLO) ---
-                    User* user = find_user_by_uid(&server_data, uid_str);
-
-                    if (user != NULL) {
-                        // User existe
-                        if (strcmp(user->password, password_str) == 0) {
-                            // Password correta
-                            if (user->is_logged_in) {
-                                // User está logado, fazer logout
-                                user->is_logged_in = false;
-                                strcpy(response_buffer, "RLO OK\n");
-                                if (verbose) printf("User %s fez logout com sucesso.\n", uid_str);
-                            } else {
-                                // User não está logado
-                                strcpy(response_buffer, "RLO NOK\n");
-                                if (verbose) printf("User %s tentou logout mas não estava logado.\n", uid_str);
-                            }
-                        } else {
-                            // Password incorreta
-                            strcpy(response_buffer, "RLO WRP\n");
-                            if (verbose) printf("Tentativa de logout falhou para %s: password incorreta.\n", uid_str);
-                        }
-                    } else {
-                        // User não existe
-                        strcpy(response_buffer, "RLO UNR\n");
-                        if (verbose) printf("Tentativa de logout falhou: user %s não registado.\n", uid_str);
-                    }
-                
-                } else if (strcmp(command, "UNR") == 0) {
-                    // --- Implementar unregister (UNR/RUR) ---
-                    User* user = find_user_by_uid(&server_data, uid_str);
-
-                    if (user != NULL) {
-                        // User existe
-                        if (strcmp(user->password, password_str) == 0) {
-                            // Password correta
-                            if (user->is_logged_in) {
-                                // User está logado, pode ser removido
-                                remove_user(&server_data, uid_str);
-                                strcpy(response_buffer, "RUR OK\n");
-                                if (verbose) printf("User %s removido com sucesso.\n", uid_str);
-                            } else {
-                                // User não está logado
-                                strcpy(response_buffer, "RUR NOK\n");
-                                if (verbose) printf("Tentativa de unregister falhou para %s: user não estava logado.\n", uid_str);
-                            }
-                        } else {
-                            // Password incorreta
-                            strcpy(response_buffer, "RUR WRP\n");
-                            if (verbose) printf("Tentativa de unregister falhou para %s: password incorreta.\n", uid_str);
-                        }
-                    } else {
-                        // User não existe
-                        strcpy(response_buffer, "RUR UNR\n");
-                        if (verbose) printf("Tentativa de unregister falhou: user %s não registado.\n", uid_str);
-                    }
-
-                } else {
-                    // Outros comandos UDP (LOU, UNR, LME, LMR) serão implementados mais tarde
-                    strcpy(response_buffer, "RLI ERR\n"); // Resposta de erro genérica por enquanto
-                    if (verbose) printf("Comando UDP desconhecido ou não implementado: %s\n", command);
+        // Adicionar todos os sockets TCP de clientes ativos ao conjunto e atualizar max_fd_current
+        for (int i = 0; i < MAX_TCP_CLIENTS; i++) {
+            if (client_tcp_fds[i] > 0) { // Se o slot estiver em uso
+                FD_SET(client_tcp_fds[i], &read_fds);
+                if (client_tcp_fds[i] > max_fd_current) {
+                    max_fd_current = client_tcp_fds[i];
                 }
-            } else {
-                // Erro de sintaxe no pedido
-                strcpy(response_buffer, "RLI ERR\n");
-                if (verbose) printf("Erro de sintaxe no pedido UDP: %s", buffer);
             }
+        }
 
-            // Enviar a resposta de volta ao cliente
-            ssize_t sent_bytes = sendto(udp_fd, response_buffer, strlen(response_buffer), 0,
-                                        (struct sockaddr*)&client_addr, client_len);
-            if (sent_bytes == -1) {
-                perror("Erro ao enviar resposta UDP");
-            } else {
+        // Bloquear até que haja atividade num dos sockets monitorizados
+        if (select(max_fd_current + 1, &read_fds, NULL, NULL, NULL) < 0) {
+            handle_error("Erro no select");
+        }
+
+        // Verificar se há atividade no socket UDP
+        if (FD_ISSET(udp_fd, &read_fds)) {
+            char buffer[1024];
+            char response_buffer[1024];
+            char command[4];
+            char uid_str[7];
+            char password_str[9];
+            client_len = sizeof(client_addr);
+
+            ssize_t n = recvfrom(udp_fd, buffer, sizeof(buffer) - 1, 0,
+                                 (struct sockaddr*)&client_addr, &client_len);
+
+            if (n > 0) {
+                buffer[n] = '\0';
+
                 if (verbose) {
+                    printf("Recebido pedido UDP de %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                    printf("Mensagem: %s", buffer);
+                }
+
+                // Toda a lógica de processamento de comandos UDP que já existia
+                if (sscanf(buffer, "%3s %6s %8s\n", command, uid_str, password_str) == 3) {
+                    if (strcmp(command, "LIN") == 0) {
+                        User* user = find_user_by_uid(&server_data, uid_str);
+                        if (user != NULL) {
+                            if (strcmp(user->password, password_str) == 0) {
+                                user->is_logged_in = true;
+                                strcpy(response_buffer, "RLI OK\n");
+                                if (verbose) printf("User %s logado com sucesso.\n", uid_str);
+                            } else {
+                                strcpy(response_buffer, "RLI NOK\n");
+                                if (verbose) printf("Tentativa de login falhou para %s: password incorreta.\n", uid_str);
+                            }
+                        } else {
+                            add_user(&server_data, uid_str, password_str);
+                            strcpy(response_buffer, "RLI REG\n");
+                            if (verbose) printf("Novo user %s registado e logado.\n", uid_str);
+                        }
+                    } else if (strcmp(command, "LOU") == 0) {
+                        User* user = find_user_by_uid(&server_data, uid_str);
+                        if (user != NULL) {
+                            if (strcmp(user->password, password_str) == 0) {
+                                if (user->is_logged_in) {
+                                    user->is_logged_in = false;
+                                    strcpy(response_buffer, "RLO OK\n");
+                                    if (verbose) printf("User %s fez logout com sucesso.\n", uid_str);
+                                } else {
+                                    strcpy(response_buffer, "RLO NOK\n");
+                                    if (verbose) printf("User %s tentou logout mas não estava logado.\n", uid_str);
+                                }
+                            } else {
+                                strcpy(response_buffer, "RLO WRP\n");
+                                if (verbose) printf("Tentativa de logout falhou para %s: password incorreta.\n", uid_str);
+                            }
+                        } else {
+                            strcpy(response_buffer, "RLO UNR\n");
+                            if (verbose) printf("Tentativa de logout falhou: user %s não registado.\n", uid_str);
+                        }
+                    } else if (strcmp(command, "UNR") == 0) {
+                        User* user = find_user_by_uid(&server_data, uid_str);
+                        if (user != NULL) {
+                            if (strcmp(user->password, password_str) == 0) {
+                                if (user->is_logged_in) {
+                                    remove_user(&server_data, uid_str);
+                                    strcpy(response_buffer, "RUR OK\n");
+                                    if (verbose) printf("User %s removido com sucesso.\n", uid_str);
+                                } else {
+                                    strcpy(response_buffer, "RUR NOK\n");
+                                    if (verbose) printf("Tentativa de unregister falhou para %s: user não estava logado.\n", uid_str);
+                                }
+                            } else {
+                                strcpy(response_buffer, "RUR WRP\n");
+                                if (verbose) printf("Tentativa de unregister falhou para %s: password incorreta.\n", uid_str);
+                            }
+                        } else {
+                            strcpy(response_buffer, "RUR UNR\n");
+                            if (verbose) printf("Tentativa de unregister falhou: user %s não registado.\n", uid_str);
+                        }
+                    } else {
+                        strcpy(response_buffer, "RLI ERR\n");
+                        if (verbose) printf("Comando UDP desconhecido ou não implementado: %s\n", command);
+                    }
+                } else {
+                    strcpy(response_buffer, "RLI ERR\n");
+                    if (verbose) printf("Erro de sintaxe no pedido UDP: %s", buffer);
+                }
+
+                ssize_t sent_bytes = sendto(udp_fd, response_buffer, strlen(response_buffer), 0,
+                                            (struct sockaddr*)&client_addr, client_len);
+                if (sent_bytes == -1) {
+                    perror("Erro ao enviar resposta UDP");
+                } else if (verbose) {
                     printf("Resposta UDP enviada para %s:%d: %s", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), response_buffer);
                 }
             }
+        }
 
+        // Verificar se há atividade no socket TCP de escuta
+        if (FD_ISSET(tcp_fd, &read_fds)) {
+            int new_tcp_fd;
+            client_len = sizeof(client_addr); // client_addr e client_len já estão definidos
+            new_tcp_fd = accept(tcp_fd, (struct sockaddr*)&client_addr, &client_len);
+            if (new_tcp_fd < 0) {
+                perror("Erro no accept"); // Usar perror para erros de accept
+            }
+
+            else {
+                // Encontrar um slot vazio no array client_tcp_fds
+                int i;
+                for (i = 0; i < MAX_TCP_CLIENTS; i++) {
+                    if (client_tcp_fds[i] == 0) { // Slot encontrado
+                        client_tcp_fds[i] = new_tcp_fd;
+                        if (verbose) {
+                            printf("Nova conexão TCP aceite de %s:%d (fd: %d).\n",
+                                   inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), new_tcp_fd);
+                        }
+                        break;
+                    }
+                }
+                if (i == MAX_TCP_CLIENTS) { // Não há slots disponíveis
+                    fprintf(stderr, "Número máximo de clientes TCP atingido. Conexão rejeitada (fd: %d).\n", new_tcp_fd);
+                    close(new_tcp_fd); // Fecha a nova conexão imediatamente
+                }
+            }
+        }
+
+        // Verificar se há atividade nos sockets TCP dos clientes ativos
+        for (int i = 0; i < MAX_TCP_CLIENTS; i++) {
+            if (client_tcp_fds[i] > 0 && FD_ISSET(client_tcp_fds[i], &read_fds)) {
+                char tcp_buffer[1024]; // Buffer para dados TCP
+                ssize_t bytes_read = read(client_tcp_fds[i], tcp_buffer, sizeof(tcp_buffer) - 1);
+
+                if (bytes_read <= 0) { // Conexão fechada pelo cliente ou erro
+                    if (bytes_read == 0) { // Cliente fechou a conexão graciosamente
+                        if (verbose) {
+                            printf("Cliente TCP (fd: %d) desconectou-se.\n", client_tcp_fds[i]);
+                        }
+                    } else { // Erro na leitura
+                        perror("Erro ao ler do socket TCP do cliente");
+                    }
+                    close(client_tcp_fds[i]); // Fecha o socket
+                    client_tcp_fds[i] = 0; // Marca o slot como livre
+                } else {
+                    tcp_buffer[bytes_read] = '\0'; // Termina a string lida com null
+                    if (verbose) {
+                        printf("Recebido pedido TCP de fd %d: %s", client_tcp_fds[i], tcp_buffer);
+                    }
+
+                    // Por agora, vamos apenas enviar um ACK simples e fechar a conexão.
+                    // A lógica real de processamento de comandos TCP (CRE, LST, etc.)
+                    // substituirá este bloco nos próximos passos.
+                    const char *ack_msg = "ACK TCP\n";
+                    ssize_t bytes_sent = write(client_tcp_fds[i], ack_msg, strlen(ack_msg));
+                    if (bytes_sent == -1) {
+                        perror("Erro ao escrever para o socket TCP do cliente");
+                    } else if (verbose) {
+                        printf("Resposta TCP enviada para fd %d: %s", client_tcp_fds[i], ack_msg);
+                    }
+
+                    // Como especificado no enunciado para a maioria dos comandos TCP,
+                    // a conexão é fechada após o processamento de um único pedido.
+                    close(client_tcp_fds[i]);
+                    client_tcp_fds[i] = 0; // Marca o slot como livre
+                }
+            }
         }
     }
 
