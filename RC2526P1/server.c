@@ -145,6 +145,25 @@ int main(int argc, char *argv[]) {
 
     printf("Servidor UDP a escutar na porta %d\n", port);
 
+    // --- Fase 3.1: Criar Socket TCP de Escuta ---
+    int tcp_fd;
+    tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (tcp_fd == -1) {
+        handle_error("Erro ao criar socket TCP");
+    }
+
+    // Associar o socket TCP à mesma porta
+    if (bind(tcp_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
+        handle_error("Erro no bind do socket TCP");
+    }
+
+    // Colocar o socket em modo de escuta
+    if (listen(tcp_fd, 5) == -1) { // O 5 é o backlog, o número de conexões pendentes
+        handle_error("Erro no listen do socket TCP");
+    }
+
+    printf("Servidor TCP a escutar na porta %d\n", port);
+
     // --- Fase 4: Loop Principal e recvfrom() ---
     while (1) {
         char buffer[1024];
@@ -276,5 +295,6 @@ int main(int argc, char *argv[]) {
     }
 
     close(udp_fd);
+    close(tcp_fd);
     return 0;
 }
