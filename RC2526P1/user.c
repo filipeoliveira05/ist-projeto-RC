@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h> // Para gethostbyname
+#include <sys/stat.h> // Para stat()
 
 // (ALTERAR) Definir o número do grupo para a porta padrão
 #define GROUP_NUMBER 25
@@ -75,8 +76,10 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        char command[20], arg1[20], arg2[20];
-        int num_args = sscanf(command_buffer, "%s %s %s", command, arg1, arg2);
+        // Aumentar buffers para acomodar todos os argumentos possíveis
+        char command[30], arg1[30], arg2[30], arg3[30], arg4[30];
+        // O sscanf para de ler uma string no primeiro espaço.
+        int num_args = sscanf(command_buffer, "%s %s %s %s %s", command, arg1, arg2, arg3, arg4);
 
         if (num_args <= 0) { // Nenhum comando foi inserido (apenas Enter)
             continue;
@@ -212,6 +215,86 @@ int main(int argc, char *argv[]) {
                 printf("Não foi possível obter resposta do servidor.\n");
             }
             close(udp_fd);
+
+        } else if (strcmp(command, "create") == 0 && num_args == 5) {
+            if (!is_logged_in) {
+                printf("Apenas utilizadores com sessão iniciada podem criar eventos.\n");
+                continue;
+            }
+
+            // --- Implementar create (TCP) ---
+            // Comando: create <name> <event_fname> <event_date> <num_attendees>
+            // Protocolo: CRE UID password name event_date attendance_size Fname Fsize Fdata
+            char *name = arg1;
+            char *event_fname = arg2;
+            char *event_date = arg3;
+            char *num_attendees = arg4;
+
+            // 1. Verificar e ler o ficheiro local
+            FILE *file = fopen(event_fname, "rb"); // Abrir em modo de leitura binária
+            if (file == NULL) {
+                perror("Erro ao abrir o ficheiro do evento");
+                continue;
+            }
+
+            // 2. Obter o tamanho do ficheiro
+            struct stat st;
+            if (stat(event_fname, &st) != 0) {
+                perror("Erro ao obter o tamanho do ficheiro");
+                fclose(file);
+                continue;
+            }
+            long file_size = st.st_size;
+
+            // 3. Abrir conexão TCP
+            int tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
+            if (tcp_fd == -1) handle_error("Erro ao criar socket TCP");
+
+            memset(&server_addr, 0, sizeof(server_addr));
+            server_addr.sin_family = AF_INET;
+            memcpy((void*)&server_addr.sin_addr, host->h_addr_list[0], host->h_length);
+            server_addr.sin_port = htons(server_port);
+
+            if (connect(tcp_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
+                handle_error("Erro ao conectar ao servidor TCP");
+            }
+
+            // 4. Formatar e enviar o pedido
+            char request_header[512];
+            int header_len = snprintf(request_header, sizeof(request_header), "CRE %s %s %s %s %s %s %ld ",
+                                      current_uid, current_password, name, event_date, num_attendees, event_fname, file_size);
+            
+            // Enviar o cabeçalho de texto
+            if (write(tcp_fd, request_header, header_len) == -1) {
+                perror("Erro ao enviar cabeçalho TCP");
+            } else {
+                // Enviar os dados do ficheiro em blocos
+                char file_buffer[1024];
+                size_t bytes_read;
+                while ((bytes_read = fread(file_buffer, 1, sizeof(file_buffer), file)) > 0) {
+                    if (write(tcp_fd, file_buffer, bytes_read) == -1) {
+                        perror("Erro ao enviar dados do ficheiro TCP");
+                        break; // Sai do loop de escrita
+                    }
+                }
+            }
+            fclose(file);
+
+            // 5. Ler a resposta do servidor
+            char response_buffer[128];
+            ssize_t n = read(tcp_fd, response_buffer, sizeof(response_buffer) - 1);
+            if (n > 0) {
+                response_buffer[n] = '\0';
+                char status[4], eid_str[4];
+                if (sscanf(response_buffer, "RCE %s %s", status, eid_str) == 2 && strcmp(status, "OK") == 0) {
+                    printf("Evento criado com sucesso com o ID: %s\n", eid_str);
+                } else {
+                    printf("Não foi possível criar o evento. Resposta do servidor: %s", response_buffer);
+                }
+            }
+
+            // 6. Fechar a conexão
+            close(tcp_fd);
 
         } else if (strcmp(command, "exit") == 0) {
             if (is_logged_in) {

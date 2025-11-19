@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 
 // (ALTERAR) Número máximo de clientes TCP que o servidor pode gerir simultaneamente
 #define MAX_TCP_CLIENTS 10
@@ -93,6 +94,29 @@ User* add_user(ServerState *state, const char *uid, const char *password) {
     return new_user;
 }
 
+/*
+ * Adiciona um novo evento à lista ligada de eventos do servidor.
+ */
+Event* add_event(ServerState *state, const char *owner_uid, const char *name, const char *date, int total_seats, const char *filename) {
+    Event* new_event = (Event*)malloc(sizeof(Event));
+    if (new_event == NULL) {
+        handle_error("Erro ao alocar memória para novo evento");
+    }
+
+    new_event->eid = state->next_eid++;
+    strncpy(new_event->owner_uid, owner_uid, sizeof(new_event->owner_uid) - 1);
+    strncpy(new_event->name, name, sizeof(new_event->name) - 1);
+    strncpy(new_event->date, date, sizeof(new_event->date) - 1);
+    new_event->total_seats = total_seats;
+    strncpy(new_event->filename, filename, sizeof(new_event->filename) - 1);
+
+    new_event->reserved_seats = 0;
+    new_event->state = ACTIVE;
+    new_event->reservations = NULL;
+    new_event->next = state->events;
+    state->events = new_event;
+    return new_event;
+}
 // ----------------------------------------------------
 
 
@@ -347,29 +371,94 @@ int main(int argc, char *argv[]) {
                 } else {
                     tcp_buffer[bytes_read] = '\0'; // Termina a string lida com null
                     if (verbose) {
-                        printf("Recebido pedido TCP de fd %d: %s", client_tcp_fds[i], tcp_buffer);
+                        // Imprime apenas o início do buffer para não poluir o log com dados de ficheiro
+                        printf("Recebido pedido TCP de fd %d, a processar...\n", client_tcp_fds[i]);
                     }
 
-                    // Por agora, vamos apenas enviar um ACK simples e fechar a conexão.
-                    // A lógica real de processamento de comandos TCP (CRE, LST, etc.)
-                    // substituirá este bloco nos próximos passos.
-                    const char *ack_msg = "ACK TCP\n";
-                    ssize_t bytes_sent = write(client_tcp_fds[i], ack_msg, strlen(ack_msg));
+                    char response_msg[128];
+
+                    // --- Implementar create (CRE/RCE) ---
+                    if (strncmp(tcp_buffer, "CRE", 3) == 0) {
+                        char uid[7], password[9], name[11], date[17], fname[25];
+                        int attendance_size;
+                        long fsize;
+
+                        // 1. Analisar o cabeçalho de texto
+                        int num_parsed = sscanf(tcp_buffer, "CRE %6s %8s %10s %16s %d %24s %ld",
+                                                uid, password, name, date, &attendance_size, fname, &fsize);
+
+                        User* user = find_user_by_uid(&server_data, uid);
+
+                        // 2. Validar o pedido
+                        if (num_parsed < 7) {
+                            snprintf(response_msg, sizeof(response_msg), "RCE ERR\n");
+                        } else if (user == NULL || strcmp(user->password, password) != 0) {
+                            snprintf(response_msg, sizeof(response_msg), "RCE WRP\n");
+                        } else if (!user->is_logged_in) {
+                            snprintf(response_msg, sizeof(response_msg), "RCE NLG\n");
+                        } else {
+                            // 3. Receber e guardar o ficheiro
+                            char event_dir[32];
+                            char event_filepath[64];
+                            snprintf(event_dir, sizeof(event_dir), "EVENTS/%03d", server_data.next_eid);
+                            mkdir("EVENTS", 0777); // Cria o diretório principal se não existir
+                            mkdir(event_dir, 0777); // Cria o diretório específico do evento
+                            snprintf(event_filepath, sizeof(event_filepath), "%s/%s", event_dir, fname);
+
+                            FILE *file = fopen(event_filepath, "wb");
+                            if (file == NULL) {
+                                perror("Erro ao criar ficheiro do evento no servidor");
+                                snprintf(response_msg, sizeof(response_msg), "RCE NOK\n");
+                            } else {
+                                // Lógica robusta para encontrar o início dos dados do ficheiro.
+                                char *file_data_start = tcp_buffer;
+                                // O cabeçalho "CRE UID password name date size fname fsize " tem 8 campos, logo 7 espaços antes do Fsize e 8 espaços antes do Fdata.
+                                int spaces_to_find = 8;
+                                while (spaces_to_find > 0 && (file_data_start = strchr(file_data_start, ' ')) != NULL) {
+                                    file_data_start++; // Avança para depois do espaço encontrado
+                                    spaces_to_find--;
+                                }
+
+                                if (file_data_start == NULL) { /* Lidar com erro de formato se necessário */ }
+
+                                long initial_data_len = bytes_read - (file_data_start - tcp_buffer);
+                                fwrite(file_data_start, 1, initial_data_len, file);
+                                long remaining_bytes = fsize - initial_data_len;
+
+                                // Ler o resto do ficheiro do socket
+                                while (remaining_bytes > 0) {
+                                    bytes_read = read(client_tcp_fds[i], tcp_buffer, sizeof(tcp_buffer));
+                                    if (bytes_read <= 0) break;
+                                    fwrite(tcp_buffer, 1, bytes_read, file);
+                                    remaining_bytes -= bytes_read;
+                                }
+                                fclose(file);
+
+                                // 4. Criar o evento e preparar a resposta
+                                Event* new_event = add_event(&server_data, uid, name, date, attendance_size, fname);
+                                snprintf(response_msg, sizeof(response_msg), "RCE OK %03d\n", new_event->eid);
+                                if (verbose) printf("Evento %03d criado por %s.\n", new_event->eid, uid);
+                            }
+                        }
+                    } else {
+                        // Comando TCP desconhecido
+                        snprintf(response_msg, sizeof(response_msg), "ERR\n");
+                    }
+
+                    // Enviar resposta e fechar conexão
+                    ssize_t bytes_sent = write(client_tcp_fds[i], response_msg, strlen(response_msg));
                     if (bytes_sent == -1) {
                         perror("Erro ao escrever para o socket TCP do cliente");
                     } else if (verbose) {
-                        printf("Resposta TCP enviada para fd %d: %s", client_tcp_fds[i], ack_msg);
+                        printf("Resposta TCP enviada para fd %d: %s", client_tcp_fds[i], response_msg);
                     }
 
-                    // Como especificado no enunciado para a maioria dos comandos TCP,
-                    // a conexão é fechada após o processamento de um único pedido.
                     close(client_tcp_fds[i]);
                     client_tcp_fds[i] = 0; // Marca o slot como livre
                 }
             }
         }
     }
-
     close(udp_fd);
     close(tcp_fd);
     return 0;
