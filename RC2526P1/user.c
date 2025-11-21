@@ -14,8 +14,7 @@
 #include <netdb.h> // Para gethostbyname
 #include <sys/stat.h> // Para stat()
 
-// (ALTERAR) Definir o número do grupo para a porta padrão
-#define GROUP_NUMBER 25
+#define GROUP_NUMBER 66
 #define DEFAULT_PORT (58000 + GROUP_NUMBER)
 
 // --- Estado Global do Utilizador ---

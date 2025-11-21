@@ -17,8 +17,7 @@
 // (ALTERAR) Número máximo de clientes TCP que o servidor pode gerir simultaneamente
 #define MAX_TCP_CLIENTS 10
 
-// (ALTERAR) Definir o número do grupo para a porta padrão
-#define GROUP_NUMBER 25
+#define GROUP_NUMBER 66
 #define DEFAULT_PORT (58000 + GROUP_NUMBER)
 
 void handle_error(const char *msg) {
