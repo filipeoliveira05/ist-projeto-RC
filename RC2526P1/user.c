@@ -296,6 +296,70 @@ int main(int argc, char *argv[]) {
             // 6. Fechar a conexão
             close(tcp_fd);
 
+        } else if (strcmp(command, "list") == 0 && num_args == 1) {
+            // --- Implementar list (TCP) ---
+            // Protocolo: LST -> RLS status [EID name state event_date]*
+
+            // 1. Abrir conexão TCP
+            int tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
+            if (tcp_fd == -1) handle_error("Erro ao criar socket TCP");
+
+            memset(&server_addr, 0, sizeof(server_addr));
+            server_addr.sin_family = AF_INET;
+            memcpy((void*)&server_addr.sin_addr, host->h_addr_list[0], host->h_length);
+            server_addr.sin_port = htons(server_port);
+
+            if (connect(tcp_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
+                handle_error("Erro ao conectar ao servidor TCP");
+            }
+
+            // 2. Enviar o pedido
+            const char* request = "LST\n";
+            if (write(tcp_fd, request, strlen(request)) == -1) {
+                perror("Erro ao enviar pedido 'list'");
+                close(tcp_fd);
+                continue;
+            }
+
+            // 3. Ler a resposta
+            // A resposta pode ser grande, então lemos em loop até o servidor fechar a conexão.
+            char response_buffer[4096];
+            ssize_t total_bytes_read = 0;
+            ssize_t bytes_read;
+            while ((bytes_read = read(tcp_fd, response_buffer + total_bytes_read, sizeof(response_buffer) - total_bytes_read - 1)) > 0) {
+                total_bytes_read += bytes_read;
+            }
+
+            if (total_bytes_read > 0) {
+                response_buffer[total_bytes_read] = '\0';
+
+                if (strncmp(response_buffer, "RLS NOK", 7) == 0) {
+                    printf("Nenhum evento disponível de momento.\n");
+                } else if (strncmp(response_buffer, "RLS OK", 6) == 0) {
+                    printf("Eventos disponíveis:\n");
+                    printf("%-5s | %-12s | %s\n", "EID", "Nome", "Data");
+                    printf("------|--------------|----------------\n");
+
+                    char *line = strtok(response_buffer + 7, "\n"); // Pula "RLS OK " e obtém a primeira linha
+                    while (line != NULL) {
+                        char eid[6], name[12], date[12]; // Removida a variável 'state'
+                        // Usamos sscanf para extrair os campos de cada linha com limites de tamanho.
+                        // O formato "%*s" ignora o campo 'state' (que é um número inteiro).
+                        // EID (3 dígitos), name (máx 10 chars), date (dd-mm-yyyy, 10 chars).
+                        if (sscanf(line, "%5s %11s %*s %11s", eid, name, date) == 3) {
+                        printf("%-5s | %-12s | %s\n", eid, name, date);
+                        }
+                        // Pega a próxima linha
+                        line = strtok(NULL, "\n");
+                    }
+                } else {
+                    printf("Resposta inesperada do servidor: %s", response_buffer);
+                }
+            }
+
+            // 4. Fechar a conexão
+            close(tcp_fd);
+
         } else if (strcmp(command, "exit") == 0) {
             if (is_logged_in) {
                 printf("Utilizador ainda com sessão iniciada. Por favor, execute o comando 'logout' primeiro.\n");

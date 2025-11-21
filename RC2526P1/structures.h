@@ -45,7 +45,7 @@ typedef struct Reservation {
 typedef struct Event {
     int eid;                      // ID do evento (1 a 999).
     char name[11];                // Nome do evento (max 10 chars + '\0').
-    char date[11];                // Data no formato "dd-mm-yyyy" + '\0'.
+    char date[17];                // Data no formato "dd-mm-yyyy hh:mm" (16 chars) + '\0'.
     int total_seats;              // Número total de lugares (10 a 999).
     int reserved_seats;           // Número de lugares já reservados.
     char owner_uid[7];            // UID do user que criou o evento.

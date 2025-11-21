@@ -106,7 +106,9 @@ Event* add_event(ServerState *state, const char *owner_uid, const char *name, co
     new_event->eid = state->next_eid++;
     strncpy(new_event->owner_uid, owner_uid, sizeof(new_event->owner_uid) - 1);
     strncpy(new_event->name, name, sizeof(new_event->name) - 1);
+    new_event->name[sizeof(new_event->name) - 1] = '\0'; // Garantir terminação nula
     strncpy(new_event->date, date, sizeof(new_event->date) - 1);
+    new_event->date[sizeof(new_event->date) - 1] = '\0'; // Garantir terminação nula
     new_event->total_seats = total_seats;
     strncpy(new_event->filename, filename, sizeof(new_event->filename) - 1);
 
@@ -440,6 +442,36 @@ int main(int argc, char *argv[]) {
                                 if (verbose) printf("Evento %03d criado por %s.\n", new_event->eid, uid);
                             }
                         }
+                    } else if (strncmp(tcp_buffer, "LST", 3) == 0) {
+                        // --- Implementar list (LST/RLS) ---
+                        if (server_data.events == NULL) {
+                            if (verbose) printf("Nenhum evento para listar. A enviar RLS NOK.\n");
+                            snprintf(response_msg, sizeof(response_msg), "RLS NOK\n");
+                            if (verbose) {
+                                printf("Resposta TCP enviada para fd %d: %s", client_tcp_fds[i], response_msg);
+                            }
+                            write(client_tcp_fds[i], response_msg, strlen(response_msg));
+                        } else {
+                            // Enviar o cabeçalho da resposta
+                            snprintf(response_msg, sizeof(response_msg), "RLS OK ");
+                            write(client_tcp_fds[i], response_msg, strlen(response_msg));
+                            // Iterar sobre todos os eventos e enviar a informação de cada um
+                            Event* current = server_data.events;
+                            while (current != NULL) {
+                                // Formato: EID name state event_date
+                                // O enunciado do cliente pede para mostrar EID, nome e data. Vamos enviar tudo.
+                                snprintf(response_msg, sizeof(response_msg), "%03d %s %d %s\n",
+                                         current->eid, current->name, current->state, current->date);
+                                write(client_tcp_fds[i], response_msg, strlen(response_msg));
+                                current = current->next;
+                            }
+                            // Enviar um \n final para indicar o fim da lista, como especificado no enunciado.
+                            write(client_tcp_fds[i], "\n", 1);
+                            if (verbose) printf("Lista de eventos enviada para fd %d.\n", client_tcp_fds[i]);
+                        }
+                        close(client_tcp_fds[i]);
+                        client_tcp_fds[i] = 0;
+                        break; 
                     } else {
                         // Comando TCP desconhecido
                         snprintf(response_msg, sizeof(response_msg), "ERR\n");
@@ -455,6 +487,7 @@ int main(int argc, char *argv[]) {
 
                     close(client_tcp_fds[i]);
                     client_tcp_fds[i] = 0; // Marca o slot como livre
+                    break; // Sai do loop 'for' para reavaliar os fds no próximo ciclo do select
                 }
             }
         }
