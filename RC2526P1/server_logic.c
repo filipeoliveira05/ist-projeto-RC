@@ -1,10 +1,12 @@
 #include "server_logic.h"
 #include "data_manager.h" // Precisa do data_manager para manipular os dados
 #include <stdio.h>
+#include <stdlib.h> // Para atoi()
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/stat.h>
+#include <dirent.h> // Para listar diretorias (comando list)
 
 void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buffer, ServerState *server_data, bool verbose) {
     // ... cole aqui toda a lógica de processamento UDP ...
@@ -23,68 +25,52 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
 
     // Toda a lógica de processamento de comandos UDP que já existia
     if (sscanf(buffer, "%3s %6s %8s\n", command, uid_str, password_str) == 3) {
-        if (strcmp(command, "LIN") == 0) { // O server_data já é um ponteiro
-            User* user = find_user_by_uid(server_data, uid_str);
-            if (user != NULL) {
-                if (strcmp(user->password, password_str) == 0) {
-                    user->is_logged_in = true;
-                    strcpy(response_buffer, "RLI OK\n");
+        if (strcmp(command, "LIN") == 0) {
+            if (user_exists(uid_str)) {
+                if (check_user_password(uid_str, password_str)) {
+                    create_login_file(uid_str);
+                    snprintf(response_buffer, sizeof(response_buffer), "RLI OK\n");
                     if (verbose) printf("User %s logado com sucesso.\n", uid_str);
                 } else {
-                    strcpy(response_buffer, "RLI NOK\n");
+                    snprintf(response_buffer, sizeof(response_buffer), "RLI NOK\n");
                     if (verbose) printf("Tentativa de login falhou para %s: password incorreta.\n", uid_str);
                 }
-            } else {
-                add_user(server_data, uid_str, password_str);
-                strcpy(response_buffer, "RLI REG\n");
+            } else { // Novo utilizador
+                create_user_files(uid_str, password_str);
+                create_login_file(uid_str);
+                snprintf(response_buffer, sizeof(response_buffer), "RLI REG\n");
                 if (verbose) printf("Novo user %s registado e logado.\n", uid_str);
             }
         } else if (strcmp(command, "LOU") == 0) {
-            User* user = find_user_by_uid(server_data, uid_str);
-            if (user != NULL) {
-                if (strcmp(user->password, password_str) == 0) {
-                    if (user->is_logged_in) {
-                        user->is_logged_in = false;
-                        strcpy(response_buffer, "RLO OK\n");
-                        if (verbose) printf("User %s fez logout com sucesso.\n", uid_str);
-                    } else {
-                        strcpy(response_buffer, "RLO NOK\n");
-                        if (verbose) printf("User %s tentou logout mas não estava logado.\n", uid_str);
-                    }
-                } else {
-                    strcpy(response_buffer, "RLO WRP\n");
-                    if (verbose) printf("Tentativa de logout falhou para %s: password incorreta.\n", uid_str);
-                }
+            if (!user_exists(uid_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RLO UNR\n");
+            } else if (!check_user_password(uid_str, password_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RLO WRP\n");
+            } else if (!is_user_logged_in(uid_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RLO NOK\n");
             } else {
-                strcpy(response_buffer, "RLO UNR\n");
-                if (verbose) printf("Tentativa de logout falhou: user %s não registado.\n", uid_str);
+                remove_login_file(uid_str);
+                snprintf(response_buffer, sizeof(response_buffer), "RLO OK\n");
+                if (verbose) printf("User %s fez logout com sucesso.\n", uid_str);
             }
         } else if (strcmp(command, "UNR") == 0) {
-            User* user = find_user_by_uid(server_data, uid_str);
-            if (user != NULL) {
-                if (strcmp(user->password, password_str) == 0) {
-                    if (user->is_logged_in) {
-                        remove_user(server_data, uid_str);
-                        strcpy(response_buffer, "RUR OK\n");
-                        if (verbose) printf("User %s removido com sucesso.\n", uid_str);
-                    } else {
-                        strcpy(response_buffer, "RUR NOK\n");
-                        if (verbose) printf("Tentativa de unregister falhou para %s: user não estava logado.\n", uid_str);
-                    }
-                } else {
-                    strcpy(response_buffer, "RUR WRP\n");
-                    if (verbose) printf("Tentativa de unregister falhou para %s: password incorreta.\n", uid_str);
-                }
+            if (!user_exists(uid_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RUR UNR\n");
+            } else if (!check_user_password(uid_str, password_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RUR WRP\n");
+            } else if (!is_user_logged_in(uid_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RUR NOK\n");
             } else {
-                strcpy(response_buffer, "RUR UNR\n");
-                if (verbose) printf("Tentativa de unregister falhou: user %s não registado.\n", uid_str);
+                remove_user_files(uid_str);
+                snprintf(response_buffer, sizeof(response_buffer), "RUR OK\n");
+                if (verbose) printf("User %s removido com sucesso.\n", uid_str);
             }
         } else {
-            strcpy(response_buffer, "RLI ERR\n");
+            snprintf(response_buffer, sizeof(response_buffer), "RLI ERR\n");
             if (verbose) printf("Comando UDP desconhecido ou não implementado: %s\n", command);
         }
     } else {
-        strcpy(response_buffer, "RLI ERR\n");
+        snprintf(response_buffer, sizeof(response_buffer), "RLI ERR\n");
         if (verbose) printf("Erro de sintaxe no pedido UDP: %s", buffer);
     }
 
@@ -117,19 +103,17 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         int num_parsed = sscanf(tcp_buffer, "CRE %6s %8s %10s %10s %5s %d %24s %ld",
                                 uid, password, name, date, time, &attendance_size, fname, &fsize);
 
-        User* user = find_user_by_uid(server_data, uid);
-
         // 2. Validar o pedido
         if (num_parsed < 8) { // Agora esperamos 8 argumentos no cabeçalho
             snprintf(response_msg, sizeof(response_msg), "RCE ERR\n");
-        } else if (user == NULL || strcmp(user->password, password) != 0) {
+        } else if (!user_exists(uid) || !check_user_password(uid, password)) {
             snprintf(response_msg, sizeof(response_msg), "RCE WRP\n");
-        } else if (!user->is_logged_in) {
+        } else if (!is_user_logged_in(uid)) {
             snprintf(response_msg, sizeof(response_msg), "RCE NLG\n");
         } else {
             char full_date[17];
             snprintf(full_date, sizeof(full_date), "%s %s", date, time);
-
+            int current_eid = server_data->next_eid;
             // 3. Receber e guardar o ficheiro
             char event_dir[32];
             char event_filepath[64];
@@ -137,7 +121,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             mkdir("EVENTS", 0777); // Cria o diretório principal se não existir
             mkdir(event_dir, 0777); // Cria o diretório específico do evento
             snprintf(event_filepath, sizeof(event_filepath), "%s/%s", event_dir, fname);
-
+            
             FILE *file = fopen(event_filepath, "wb");
             if (file == NULL) {
                 perror("Erro ao criar ficheiro do evento no servidor");
@@ -145,8 +129,8 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             } else {
                 // Lógica robusta para encontrar o início dos dados do ficheiro.
                 char *file_data_start = tcp_buffer;
-                // O cabeçalho tem 9 campos (contando com a hora), logo 8 espaços antes dos dados.
-                int spaces_to_find = 9;
+                // O cabeçalho tem 8 campos antes dos dados, logo 8 espaços.
+                int spaces_to_find = 8;
                 while (spaces_to_find > 0 && (file_data_start = strchr(file_data_start, ' ')) != NULL) {
                     file_data_start++; // Avança para depois do espaço encontrado
                     spaces_to_find--;
@@ -166,15 +150,87 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                 }
                 fclose(file);
 
-                // 4. Criar o evento e preparar a resposta
-                Event* new_event = add_event(server_data, uid, name, full_date, attendance_size, fname);
-                snprintf(response_msg, sizeof(response_msg), "RCE OK %03d\n", new_event->eid);
-                if (verbose) printf("Evento %03d criado por %s.\n", new_event->eid, uid);
+                // 4. Criar os ficheiros de metadados do evento
+                char meta_path[256];
+                // Criar subdiretorias
+                snprintf(meta_path, sizeof(meta_path), "EVENTS/%03d/RESERVATIONS", current_eid);
+                mkdir(meta_path, 0777);
+                snprintf(meta_path, sizeof(meta_path), "EVENTS/%03d/DESCRIPTION", current_eid);
+                rename(event_filepath, meta_path); // Move o ficheiro para a subdiretoria correta
+
+                // Criar START_<eid>.txt
+                snprintf(meta_path, sizeof(meta_path), "EVENTS/%03d/START_%03d.txt", current_eid, current_eid);
+                FILE* start_file = fopen(meta_path, "w");
+                if (start_file) {
+                    fprintf(start_file, "%s %s %s %d %s\n", uid, name, fname, attendance_size, full_date);
+                    fclose(start_file);
+                }
+
+                // Criar RES_<eid>.txt
+                snprintf(meta_path, sizeof(meta_path), "EVENTS/%03d/RES_%03d.txt", current_eid, current_eid);
+                FILE* res_file = fopen(meta_path, "w");
+                if (res_file) {
+                    fprintf(res_file, "0\n");
+                    fclose(res_file);
+                }
+
+                // Criar ficheiro em USERS/<uid>/CREATED/
+                snprintf(meta_path, sizeof(meta_path), "USERS/%s/CREATED/%03d.txt", uid, current_eid);
+                FILE* created_file = fopen(meta_path, "w");
+                if (created_file) fclose(created_file); // Ficheiro vazio
+
+                // 5. Preparar resposta e incrementar EID
+                snprintf(response_msg, sizeof(response_msg), "RCE OK %03d\n", current_eid);
+                if (verbose) printf("Evento %03d criado por %s.\n", current_eid, uid);
+                server_data->next_eid++;
             }
         }
     } else if (strncmp(tcp_buffer, "LST", 3) == 0) {
         // --- Implementar list (LST/RLS) ---
-        if (server_data->events == NULL) {
+        DIR *d;
+        struct dirent *dir;
+        d = opendir("EVENTS");
+        bool has_events = false;
+        if (d) {
+            // Enviar cabeçalho OK primeiro
+            snprintf(response_msg, sizeof(response_msg), "RLS OK ");
+            write(client_fd, response_msg, strlen(response_msg));
+
+            while ((dir = readdir(d)) != NULL) {
+                // Ignorar "." e ".."
+                if (dir->d_name[0] == '.') continue;
+                
+                int eid = atoi(dir->d_name);
+                if (eid > 0) { // Verifica se o nome da diretoria é um número válido
+                    has_events = true;
+                    char start_path[256];
+                    // Usar o inteiro 'eid' com %03d em vez da string 'dir->d_name' com %s para eliminar o warning.
+                    snprintf(start_path, sizeof(start_path), "EVENTS/%03d/START_%03d.txt", eid, eid);
+                    
+                    FILE* start_file = fopen(start_path, "r");
+                    if (start_file) {
+                        char owner_uid[7], event_name[11], desc_fname[25], event_date[17];
+                        int total_seats;
+                        // Formato no ficheiro: UID event_name desc_fname event_attend start_date start_time
+                        if (fscanf(start_file, "%6s %10s %24s %d %16[^\n]", owner_uid, event_name, desc_fname, &total_seats, event_date) == 5) {
+                            // TODO: Calcular o estado real do evento (ativo, passado, etc.)
+                            int state = 1; // Por agora, assumir que todos estão ativos
+                            snprintf(response_msg, sizeof(response_msg), "%03d %s %d %s\n", eid, event_name, state, event_date);
+                            write(client_fd, response_msg, strlen(response_msg));
+                        }
+                        fclose(start_file);
+                    }
+                }
+            }
+            closedir(d);
+
+            if (has_events) {
+                write(client_fd, "\n", 1); // Terminador da lista
+                if (verbose) printf("Lista de eventos enviada para fd %d.\n", client_fd);
+            }
+        }
+
+        if (!has_events) { // Se o loop não encontrou nenhum evento
             if (verbose) printf("Nenhum evento para listar. A enviar RLS NOK.\n");
             snprintf(response_msg, sizeof(response_msg), "RLS NOK\n");
             if (verbose) {
@@ -182,22 +238,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             }
             write(client_fd, response_msg, strlen(response_msg));
         } else {
-            // Enviar o cabeçalho da resposta
-            snprintf(response_msg, sizeof(response_msg), "RLS OK ");
-            write(client_fd, response_msg, strlen(response_msg));
-            // Iterar sobre todos os eventos e enviar a informação de cada um
-            Event* current = server_data->events;
-            while (current != NULL) {
-                // Formato: EID name state event_date
-                // O enunciado do cliente pede para mostrar EID, nome e data. Vamos enviar tudo.
-                snprintf(response_msg, sizeof(response_msg), "%03d %s %d %s\n",
-                            current->eid, current->name, current->state, current->date);
-                write(client_fd, response_msg, strlen(response_msg));
-                current = current->next;
-            }
-            // Enviar um \n final para indicar o fim da lista, como especificado no enunciado.
-            write(client_fd, "\n", 1);
-            if (verbose) printf("Lista de eventos enviada para fd %d.\n", client_fd);
+            // A resposta já foi enviada em pedaços
         }
         // A responsabilidade de fechar o socket é do loop principal em server.c
         return; // Retorna para não tentar enviar outra resposta no final
