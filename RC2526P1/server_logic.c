@@ -26,7 +26,13 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
     // Toda a lógica de processamento de comandos UDP que já existia
     if (sscanf(buffer, "%3s %6s %8s\n", command, uid_str, password_str) == 3) {
         if (strcmp(command, "LIN") == 0) {
-            if (user_exists(uid_str)) {
+            // Se a diretoria do user não existe, OU se existe mas não tem ficheiro de password (caso de re-registo)
+            if (!user_exists(uid_str) || !user_password_file_exists(uid_str)) {
+                create_user_files(uid_str, password_str);
+                create_login_file(uid_str);
+                snprintf(response_buffer, sizeof(response_buffer), "RLI REG\n");
+                if (verbose) printf("Novo user %s registado e logado.\n", uid_str);
+            } else { // O utilizador existe e tem um ficheiro de password, proceder com login normal
                 if (check_user_password(uid_str, password_str)) {
                     create_login_file(uid_str);
                     snprintf(response_buffer, sizeof(response_buffer), "RLI OK\n");
@@ -35,11 +41,6 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
                     snprintf(response_buffer, sizeof(response_buffer), "RLI NOK\n");
                     if (verbose) printf("Tentativa de login falhou para %s: password incorreta.\n", uid_str);
                 }
-            } else { // Novo utilizador
-                create_user_files(uid_str, password_str);
-                create_login_file(uid_str);
-                snprintf(response_buffer, sizeof(response_buffer), "RLI REG\n");
-                if (verbose) printf("Novo user %s registado e logado.\n", uid_str);
             }
         } else if (strcmp(command, "LOU") == 0) {
             if (!user_exists(uid_str)) {
@@ -95,13 +96,14 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
     if (strncmp(tcp_buffer, "CRE", 3) == 0) {
         char uid[7], password[9], name[11], date[11], time[6], fname[25];
         int attendance_size;
-        long fsize;
+        long fsize; 
+        int header_len = 0; // Para guardar o tamanho do cabeçalho lido
 
         // 1. Analisar o cabeçalho de texto
-        // O formato da data é "dd-mm-yyyy hh:mm". O sscanf com %s para no espaço.
+        // O formato da data é "dd-mm-yyyy hh:mm". O sscanf com %s pára no espaço.
         // Temos de ler a data e a hora em separado.
-        int num_parsed = sscanf(tcp_buffer, "CRE %6s %8s %10s %10s %5s %d %24s %ld",
-                                uid, password, name, date, time, &attendance_size, fname, &fsize);
+        int num_parsed = sscanf(tcp_buffer, "CRE %6s %8s %10s %10s %5s %d %24s %ld %n",
+                                uid, password, name, date, time, &attendance_size, fname, &fsize, &header_len);
 
         // 2. Validar o pedido
         if (num_parsed < 8) { // Agora esperamos 8 argumentos no cabeçalho
@@ -127,20 +129,11 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                 perror("Erro ao criar ficheiro do evento no servidor");
                 snprintf(response_msg, sizeof(response_msg), "RCE NOK\n");
             } else {
-                // Lógica robusta para encontrar o início dos dados do ficheiro.
-                char *file_data_start = tcp_buffer;
-                // O cabeçalho tem 8 campos antes dos dados, logo 8 espaços.
-                int spaces_to_find = 8;
-                while (spaces_to_find > 0 && (file_data_start = strchr(file_data_start, ' ')) != NULL) {
-                    file_data_start++; // Avança para depois do espaço encontrado
-                    spaces_to_find--;
-                }
-
-                if (file_data_start != NULL) {
-                    long initial_data_len = bytes_read - (file_data_start - tcp_buffer);
-                    fwrite(file_data_start, 1, initial_data_len, file);
+                // Usar o header_len obtido com %n para encontrar o início dos dados do ficheiro.
+                if (header_len > 0 && header_len < bytes_read) {
+                    long initial_data_len = bytes_read - header_len;
+                    fwrite(tcp_buffer + header_len, 1, initial_data_len, file);
                     long remaining_bytes = fsize - initial_data_len;
-                    // Ler o resto do ficheiro do socket
                     while (remaining_bytes > 0) {
                         bytes_read = read(client_fd, tcp_buffer, sizeof(tcp_buffer));
                         if (bytes_read <= 0) break;

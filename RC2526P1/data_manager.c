@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <time.h>
 #include <dirent.h>
 
 void handle_error(const char *msg) {
@@ -19,6 +20,16 @@ bool user_exists(const char *uid) {
     snprintf(path, sizeof(path), "USERS/%s", uid);
     struct stat st;
     return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+/**
+ * Verifica se o ficheiro de password de um utilizador existe.
+ */
+bool user_password_file_exists(const char *uid) {
+    char path[256];
+    snprintf(path, sizeof(path), "USERS/%s/%s_pass.txt", uid, uid);
+    struct stat st;
+    return stat(path, &st) == 0;
 }
 
 /**
@@ -109,4 +120,22 @@ void remove_user_files(const char *uid) {
     snprintf(path, sizeof(path), "USERS/%s/%s_pass.txt", uid, uid);
     unlink(path);
     remove_login_file(uid); // Reutiliza a função de logout
+}
+
+/**
+ * Obtém a data e hora atuais e formata-as para serem usadas em nomes de ficheiros.
+ * date_str: YYYY-MM-DD
+ * time_str: HHMMSS
+ */
+void get_datetime_for_filename(char *date_str, char *time_str, size_t size) {
+    time_t now;
+    struct tm *ts;
+
+    time(&now);
+    ts = localtime(&now); // Usar localtime para a hora local
+
+    // Formato YYYY-MM-DD
+    strftime(date_str, size, "%Y-%m-%d", ts);
+    // Formato HHMMSS
+    strftime(time_str, size, "%H%M%S", ts);
 }
