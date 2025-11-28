@@ -1,13 +1,21 @@
-CC=gcc
-CFLAGS=-Wall -g
+CC = gcc
+CFLAGS = -Wall -g
+
+# User
+USER_SRCS = user.c user_commands.c
+USER_OBJS = $(USER_SRCS:.c=.o)
+
+# Servidor (ES)
+ES_SRCS = server.c server_logic.c data_manager.c
+ES_OBJS = $(ES_SRCS:.c=.o)
 
 all: user ES
 
-user: user.c structures.h
-	$(CC) $(CFLAGS) -o user user.c
+user: $(USER_OBJS)
+	$(CC) $(CFLAGS) -o user $(USER_OBJS)
 
-ES: server.c structures.h
-	$(CC) $(CFLAGS) -o ES server.c
+ES: $(ES_OBJS)
+	$(CC) $(CFLAGS) -o ES $(ES_OBJS)
 
 clean:
-	rm -f user ES
+	rm -f user ES $(USER_OBJS) $(ES_OBJS)

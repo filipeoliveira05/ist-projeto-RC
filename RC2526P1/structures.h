@@ -66,5 +66,17 @@ typedef struct ServerState {
     int next_eid;   // Contador para atribuir o próximo EID disponível.
 } ServerState;
 
+/*
+ * Estrutura principal do cliente para gerir todo o estado.
+ */
+typedef struct ClientState {
+    char current_uid[7];        // UID do utilizador atualmente logado.
+    char current_password[9];   // Password do utilizador atualmente logado.
+    bool is_logged_in;          // Flag para saber se o user tem sessão ativa.
+    char *server_ip;            // IP do servidor de eventos.
+    int server_port;            // Porta do servidor de eventos.
+    struct hostent *host_info;  // Informação do host do servidor.
+} ClientState;
+
 
 #endif
