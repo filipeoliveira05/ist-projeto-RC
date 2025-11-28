@@ -68,9 +68,9 @@ int main(int argc, char *argv[]) {
         }
 
         // Aumentar buffers para acomodar todos os argumentos possíveis
-        char command[30], arg1[30], arg2[30], arg3[30], arg4[30];
-        // O sscanf para de ler uma string no primeiro espaço.
-        int num_args = sscanf(command_buffer, "%s %s %s %s %s", command, arg1, arg2, arg3, arg4);
+        char command[30], arg1[30], arg2[30], arg3[30], arg4[30], arg5[30];
+        // O sscanf para de ler uma string no primeiro espaço. Para 'create', arg3 é a data, arg4 é a hora.
+        int num_args = sscanf(command_buffer, "%s %s %s %s %s %s", command, arg1, arg2, arg3, arg4, arg5);
 
         if (num_args <= 0) { // Nenhum comando foi inserido (apenas Enter)
             continue;
@@ -85,8 +85,9 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(command, "unregister") == 0 && num_args == 1) {
             handle_unregister_command(&client_state);
 
-        } else if (strcmp(command, "create") == 0 && num_args == 5) {
-            handle_create_command(&client_state, arg1, arg2, arg3, arg4);
+        } else if (strcmp(command, "create") == 0 && num_args == 6) {
+            // create <name> <event_fname> <date> <time> <num_attendees>
+            handle_create_command(&client_state, arg1, arg2, arg3, arg4, arg5);
 
         } else if (strcmp(command, "list") == 0 && num_args == 1) {
             handle_list_command(&client_state);

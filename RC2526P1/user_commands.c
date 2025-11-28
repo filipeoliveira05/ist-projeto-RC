@@ -155,7 +155,7 @@ void handle_unregister_command(ClientState *client_state) {
     close(udp_fd);
 }
 
-void handle_create_command(ClientState *client_state, const char *name, const char *event_fname, const char *event_date, const char *num_attendees) {
+void handle_create_command(ClientState *client_state, const char *name, const char *event_fname, const char *date, const char *time, const char *num_attendees) {
     if (!client_state->is_logged_in) {
         printf("Apenas utilizadores com sessão iniciada podem criar eventos.\n");
         return;
@@ -179,8 +179,11 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
     int tcp_fd = create_tcp_socket_and_connect(client_state, &server_addr);
 
     char request_header[512];
+    // Juntar a data e a hora numa única string para enviar ao servidor
+    char full_date[17];
+    snprintf(full_date, sizeof(full_date), "%s %s", date, time);
     int header_len = snprintf(request_header, sizeof(request_header), "CRE %s %s %s %s %s %s %ld ",
-                              client_state->current_uid, client_state->current_password, name, event_date, num_attendees, event_fname, file_size);
+                              client_state->current_uid, client_state->current_password, name, full_date, num_attendees, event_fname, file_size);
     
     if (write(tcp_fd, request_header, header_len) == -1) {
         perror("Erro ao enviar cabeçalho TCP");
