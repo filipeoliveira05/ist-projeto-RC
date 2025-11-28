@@ -2,102 +2,111 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <dirent.h>
 
 void handle_error(const char *msg) {
     perror(msg);
     exit(1);
 }
 
-// --- Funções Auxiliares para Gestão de Utilizadores ---
-
-/*
- * Remove um user da linked list de users do servidor.
+/**
+ * Verifica se um utilizador existe, procurando pela sua diretoria.
  */
-void remove_user(ServerState *state, const char *uid) {
-    User *current = state->users, *prev = NULL;
-
-    // Se o user a remover for o primeiro da lista
-    if (current != NULL && strcmp(current->uid, uid) == 0) {
-        state->users = current->next;
-        free(current);
-        return;
-    }
-
-    // Procura o user na lista
-    while (current != NULL && strcmp(current->uid, uid) != 0) {
-        prev = current;
-        current = current->next;
-    }
-
-    // Se o user não foi encontrado
-    if (current == NULL) return;
-
-    // Remove o user da linked list
-    prev->next = current->next;
-
-    free(current); // Liberta a memória alocada ao user
+bool user_exists(const char *uid) {
+    char path[256];
+    snprintf(path, sizeof(path), "USERS/%s", uid);
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
 }
 
-/*
- * Procura um user na linked list pelo seu UID.
- * Retorna um pointer para o user se encontrado, ou NULL caso contrário.
+/**
+ * Verifica se a password fornecida corresponde à guardada no ficheiro do utilizador.
  */
-User* find_user_by_uid(ServerState *state, const char *uid) {
-    User* current = state->users;
-    while (current != NULL) {
-        if (strcmp(current->uid, uid) == 0) {
-            return current;
+bool check_user_password(const char *uid, const char *password) {
+    char path[256];
+    snprintf(path, sizeof(path), "USERS/%s/%s_pass.txt", uid, uid);
+    FILE *f = fopen(path, "r");
+    if (f == NULL) return false;
+
+    char stored_password[10]; // 8 chars + \n + \0
+    bool result = false;
+    if (fgets(stored_password, sizeof(stored_password), f) != NULL) {
+        // Remove o \n do final, se existir
+        stored_password[strcspn(stored_password, "\n")] = 0;
+        if (strcmp(stored_password, password) == 0) {
+            result = true;
         }
-        current = current->next;
     }
-    return NULL;
+    fclose(f);
+    return result;
 }
 
-/*
- * Adiciona um novo user à linked list de users do servidor.
- * Retorna um pointer para o novo user criado.
+/**
+ * Verifica se um utilizador está logado, procurando pelo ficheiro _login.txt.
  */
-User* add_user(ServerState *state, const char *uid, const char *password) {
-    User* new_user = (User*)malloc(sizeof(User));
-    if (new_user == NULL) {
-        handle_error("Erro ao alocar memória para novo user");
-    }
-
-    strncpy(new_user->uid, uid, sizeof(new_user->uid) - 1);
-    new_user->uid[sizeof(new_user->uid) - 1] = '\0';
-
-    strncpy(new_user->password, password, sizeof(new_user->password) - 1);
-    new_user->password[sizeof(new_user->password) - 1] = '\0';
-
-    new_user->is_logged_in = true; // Novo user é automaticamente logado
-    new_user->next = state->users; // Adiciona no início da linked list
-    state->users = new_user;
-
-    return new_user;
+bool is_user_logged_in(const char *uid) {
+    char path[256];
+    snprintf(path, sizeof(path), "USERS/%s/%s_login.txt", uid, uid);
+    struct stat st;
+    return stat(path, &st) == 0;
 }
 
-/*
- * Adiciona um novo evento à lista ligada de eventos do servidor.
+/**
+ * Cria a estrutura de ficheiros para um novo utilizador.
  */
-Event* add_event(ServerState *state, const char *owner_uid, const char *name, const char *date, int total_seats, const char *filename) {
-    Event* new_event = (Event*)malloc(sizeof(Event));
-    if (new_event == NULL) {
-        handle_error("Erro ao alocar memória para novo evento");
+void create_user_files(const char *uid, const char *password) {
+    char path[256];
+
+    // Criar diretoria USERS/<uid>
+    snprintf(path, sizeof(path), "USERS/%s", uid);
+    mkdir(path, 0777);
+
+    // Criar subdiretorias CREATED e RESERVED
+    snprintf(path, sizeof(path), "USERS/%s/CREATED", uid);
+    mkdir(path, 0777);
+    snprintf(path, sizeof(path), "USERS/%s/RESERVED", uid);
+    mkdir(path, 0777);
+
+    // Criar ficheiro USERS/<uid>/<uid>_pass.txt
+    snprintf(path, sizeof(path), "USERS/%s/%s_pass.txt", uid, uid);
+    FILE *f = fopen(path, "w");
+    if (f != NULL) {
+        fprintf(f, "%s\n", password);
+        fclose(f);
     }
+}
 
-    new_event->eid = state->next_eid++;
-    strncpy(new_event->owner_uid, owner_uid, sizeof(new_event->owner_uid) - 1);
-    strncpy(new_event->name, name, sizeof(new_event->name) - 1);
-    new_event->name[sizeof(new_event->name) - 1] = '\0'; // Garantir terminação nula
-    strncpy(new_event->date, date, sizeof(new_event->date) - 1);
-    new_event->date[sizeof(new_event->date) - 1] = '\0'; // Garantir terminação nula
-    new_event->total_seats = total_seats;
-    strncpy(new_event->filename, filename, sizeof(new_event->filename) - 1);
+/**
+ * Cria o ficheiro de sessão para um utilizador.
+ */
+void create_login_file(const char *uid) {
+    char path[256];
+    snprintf(path, sizeof(path), "USERS/%s/%s_login.txt", uid, uid);
+    FILE *f = fopen(path, "w");
+    if (f != NULL) {
+        // O conteúdo não importa, apenas a existência do ficheiro.
+        fclose(f);
+    }
+}
 
-    new_event->reserved_seats = 0;
-    new_event->state = ACTIVE;
-    new_event->reservations = NULL;
-    new_event->next = state->events;
-    state->events = new_event;
-    return new_event;
+/**
+ * Remove o ficheiro de sessão de um utilizador (logout).
+ */
+void remove_login_file(const char *uid) {
+    char path[256];
+    snprintf(path, sizeof(path), "USERS/%s/%s_login.txt", uid, uid);
+    unlink(path);
+}
+
+/**
+ * Remove os ficheiros de um utilizador (unregister).
+ * De acordo com o guia, apenas _pass.txt e _login.txt são removidos.
+ */
+void remove_user_files(const char *uid) {
+    char path[256];
+    snprintf(path, sizeof(path), "USERS/%s/%s_pass.txt", uid, uid);
+    unlink(path);
+    remove_login_file(uid); // Reutiliza a função de logout
 }

@@ -6,12 +6,14 @@
 // Função de utilidade para tratamento de erros
 void handle_error(const char *msg);
 
-// Funções de gestão de utilizadores
-User* find_user_by_uid(ServerState *state, const char *uid);
-User* add_user(ServerState *state, const char *uid, const char *password);
-void remove_user(ServerState *state, const char *uid);
+// Funções de gestão de utilizadores baseadas em ficheiros
+bool user_exists(const char *uid);
+bool check_user_password(const char *uid, const char *password);
+bool is_user_logged_in(const char *uid);
+void create_user_files(const char *uid, const char *password);
+void create_login_file(const char *uid);
+void remove_login_file(const char *uid);
+void remove_user_files(const char *uid);
 
-// Funções de gestão de eventos
-Event* add_event(ServerState *state, const char *owner_uid, const char *name, const char *date, int total_seats, const char *filename);
 
 #endif

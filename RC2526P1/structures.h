@@ -22,20 +22,8 @@ typedef enum {
  * Estrutura para armazenar a informação de um user.
  */
 typedef struct User {
-    char uid[7];        // UID de 6 dígitos + '\0'.
-    char password[9];   // Password de 8 caracteres + '\0'.
-    bool is_logged_in;  // Flag para saber se o user tem sessão ativa.
-    struct User* next;  // Pointer para o próximo user numa linked list.
-} User;
-
-
-/*
- * Estrutura para armazenar uma reserva feita por um user num evento.
- */
-typedef struct Reservation {
-    char uid[7];                  // UID do user que fez a reserva.
-    int reserved_seats;           // Número de lugares reservados.
-    struct Reservation* next;     // Ponteiro para a próxima reserva no mesmo evento.
+    char uid[7];       // UID de 6 dígitos + '\0'.
+    char password[9];  // Password de 8 caracteres + '\0'.
 } Reservation;
 
 
@@ -50,9 +38,7 @@ typedef struct Event {
     int reserved_seats;           // Número de lugares já reservados.
     char owner_uid[7];            // UID do user que criou o evento.
     char filename[25];            // Nome do ficheiro de descrição (max 24 chars + '\0').
-    EventState state;             // Estado atual do evento (ACTIVE, PAST, SOLD_OUT, CLOSED).
-    Reservation* reservations;    // Linked list de reservas para este evento.
-    struct Event* next;           // Pointer para o próximo evento numa linked list.
+    EventState state;             // Estado atual do evento (calculado dinamicamente).
 } Event;
 
 
@@ -61,8 +47,6 @@ typedef struct Event {
  * Agrupa as listas de users e eventos num só local.
  */
 typedef struct ServerState {
-    User* users;    // Head da linked list de users.
-    Event* events;  // Head da linked liss de eventos.
     int next_eid;   // Contador para atribuir o próximo EID disponível.
 } ServerState;
 

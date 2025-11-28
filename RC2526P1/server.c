@@ -49,9 +49,12 @@ int main(int argc, char *argv[]) {
 
     // Inicializar o estado global do servidor
     ServerState server_data;
-    server_data.users = NULL;
-    server_data.events = NULL;
     server_data.next_eid = 1; // EIDs começam em 1
+
+    // --- Fase 1.1: Criação das diretorias de persistência ---
+    // O modo 0777 permite que todos os utilizadores leiam, escrevam e executem.
+    mkdir("USERS", 0777);
+    mkdir("EVENTS", 0777);
 
     // --- Fase 2: Criação do Socket UDP ---
     int udp_fd;
