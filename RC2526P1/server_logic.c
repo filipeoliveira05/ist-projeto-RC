@@ -117,13 +117,18 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             snprintf(full_date, sizeof(full_date), "%s %s", date, time);
             int current_eid = server_data->next_eid;
             // 3. Receber e guardar o ficheiro
-            char event_dir[32];
-            char event_filepath[64];
-            snprintf(event_dir, sizeof(event_dir), "EVENTS/%03d", server_data->next_eid);
+            char event_dir_path[32];
+            char description_dir_path[64];
+            char event_filepath[128];
+
+            snprintf(event_dir_path, sizeof(event_dir_path), "EVENTS/%03d", current_eid);
             mkdir("EVENTS", 0777); // Cria o diretório principal se não existir
-            mkdir(event_dir, 0777); // Cria o diretório específico do evento
-            snprintf(event_filepath, sizeof(event_filepath), "%s/%s", event_dir, fname);
+            mkdir(event_dir_path, 0777); // Cria o diretório específico do evento
             
+            snprintf(description_dir_path, sizeof(description_dir_path), "%s/DESCRIPTION", event_dir_path);
+            mkdir(description_dir_path, 0777); // Cria a subdiretoria DESCRIPTION
+
+            snprintf(event_filepath, sizeof(event_filepath), "%s/%s", description_dir_path, fname);
             FILE *file = fopen(event_filepath, "wb");
             if (file == NULL) {
                 perror("Erro ao criar ficheiro do evento no servidor");
@@ -145,11 +150,9 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
 
                 // 4. Criar os ficheiros de metadados do evento
                 char meta_path[256];
-                // Criar subdiretorias
+                // Criar subdiretoria de reservas
                 snprintf(meta_path, sizeof(meta_path), "EVENTS/%03d/RESERVATIONS", current_eid);
                 mkdir(meta_path, 0777);
-                snprintf(meta_path, sizeof(meta_path), "EVENTS/%03d/DESCRIPTION", current_eid);
-                rename(event_filepath, meta_path); // Move o ficheiro para a subdiretoria correta
 
                 // Criar START_<eid>.txt
                 snprintf(meta_path, sizeof(meta_path), "EVENTS/%03d/START_%03d.txt", current_eid, current_eid);
@@ -176,64 +179,96 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                 snprintf(response_msg, sizeof(response_msg), "RCE OK %03d\n", current_eid);
                 if (verbose) printf("Evento %03d criado por %s.\n", current_eid, uid);
                 server_data->next_eid++;
+
+                // Guardar o novo next_eid no ficheiro para persistência
+                char eid_file_path[64];
+                snprintf(eid_file_path, sizeof(eid_file_path), "EVENTS/eid.dat");
+                FILE *eid_file = fopen(eid_file_path, "w");
+                if (eid_file != NULL) {
+                    fprintf(eid_file, "%d", server_data->next_eid);
+                    fclose(eid_file);
+                    if (verbose) printf("next_eid atualizado para %d em %s.\n", server_data->next_eid, eid_file_path);
+                } else {
+                    perror("Erro ao guardar next_eid em EVENTS/eid.dat");
+                }
             }
         }
     } else if (strncmp(tcp_buffer, "LST", 3) == 0) {
         // --- Implementar list (LST/RLS) ---
-        DIR *d;
-        struct dirent *dir;
-        d = opendir("EVENTS");
-        bool has_events = false;
-        if (d) {
-            // Enviar cabeçalho OK primeiro
-            snprintf(response_msg, sizeof(response_msg), "RLS OK ");
+        struct dirent **namelist;
+        int n;
+        bool found_any_event = false;
+        char temp_event_line[128]; // Buffer temporário para cada linha de evento
+
+        // Usar scandir para obter uma lista ordenada de entradas na diretoria EVENTS
+        n = scandir("EVENTS", &namelist, NULL, alphasort);
+        if (n < 0) {
+            perror("scandir");
+            snprintf(response_msg, sizeof(response_msg), "RLS NOK\n");
+            write(client_fd, response_msg, strlen(response_msg));
+            return;
+        }
+
+        // Primeiro, verificar se existem eventos válidos para listar
+        for (int i = 0; i < n; i++) {
+            // Ignorar "." e ".." e outros ficheiros/diretorias que não sejam EIDs numéricos
+            if (namelist[i]->d_name[0] == '.') {
+                // Não libertar aqui, será feito no loop principal
+            } else {
+                int eid = atoi(namelist[i]->d_name);
+                if (eid > 0) { // Verifica se o nome da diretoria é um número válido (EID)
+                    char start_path[256];
+                    snprintf(start_path, sizeof(start_path), "EVENTS/%03d/START_%03d.txt", eid, eid);
+                    FILE* start_file = fopen(start_path, "r");
+                    if (start_file) {
+                        found_any_event = true;
+                        fclose(start_file);
+                        // Não precisamos de ler os detalhes completos ainda, apenas verificar a existência
+                    }
+                }
+            }
+        }
+
+        if (!found_any_event) {
+            snprintf(response_msg, sizeof(response_msg), "RLS NOK\n");
+            write(client_fd, response_msg, strlen(response_msg));
+            if (verbose) printf("Nenhum evento para listar. A enviar RLS NOK.\n");
+        } else {
+            snprintf(response_msg, sizeof(response_msg), "RLS OK "); // Enviar cabeçalho OK
             write(client_fd, response_msg, strlen(response_msg));
 
-            while ((dir = readdir(d)) != NULL) {
-                // Ignorar "." e ".."
-                if (dir->d_name[0] == '.') continue;
+            for (int i = 0; i < n; i++) {
+                if (namelist[i]->d_name[0] == '.') {
+                    free(namelist[i]); // Libertar memória para "." e ".."
+                    continue;
+                }
                 
-                int eid = atoi(dir->d_name);
-                if (eid > 0) { // Verifica se o nome da diretoria é um número válido
-                    has_events = true;
+                int eid = atoi(namelist[i]->d_name);
+                if (eid > 0) {
                     char start_path[256];
-                    // Usar o inteiro 'eid' com %03d em vez da string 'dir->d_name' com %s para eliminar o warning.
                     snprintf(start_path, sizeof(start_path), "EVENTS/%03d/START_%03d.txt", eid, eid);
                     
                     FILE* start_file = fopen(start_path, "r");
                     if (start_file) {
-                        char owner_uid[7], event_name[11], desc_fname[25], event_date[17];
+                        char owner_uid[7], event_name[11], desc_fname[25], event_date_str[11], event_time_str[6];
                         int total_seats;
                         // Formato no ficheiro: UID event_name desc_fname event_attend start_date start_time
-                        if (fscanf(start_file, "%6s %10s %24s %d %16[^\n]", owner_uid, event_name, desc_fname, &total_seats, event_date) == 5) {
-                            // TODO: Calcular o estado real do evento (ativo, passado, etc.)
-                            int state = 1; // Por agora, assumir que todos estão ativos
-                            snprintf(response_msg, sizeof(response_msg), "%03d %s %d %s\n", eid, event_name, state, event_date);
-                            write(client_fd, response_msg, strlen(response_msg));
+                        if (fscanf(start_file, "%6s %10s %24s %d %10s %5s", owner_uid, event_name, desc_fname, &total_seats, event_date_str, event_time_str) == 6) {
+                            char full_event_date[17]; // dd-mm-yyyy hh:mm + '\0'
+                            snprintf(full_event_date, sizeof(full_event_date), "%s %s", event_date_str, event_time_str);
+                            int state = 1; // TODO: Calcular o estado real do evento (ativo, passado, etc.)
+                            snprintf(temp_event_line, sizeof(temp_event_line), "%03d %s %d %s\n", eid, event_name, state, full_event_date);
+                            write(client_fd, temp_event_line, strlen(temp_event_line));
                         }
                         fclose(start_file);
                     }
                 }
+                free(namelist[i]); // Libertar memória para cada struct dirent
             }
-            closedir(d);
-
-            if (has_events) {
-                write(client_fd, "\n", 1); // Terminador da lista
-                if (verbose) printf("Lista de eventos enviada para fd %d.\n", client_fd);
-            }
+            write(client_fd, "\n", 1); // Nova linha final para indicar o fim da lista
+            if (verbose) printf("Lista de eventos enviada para fd %d.\n", client_fd);
         }
-
-        if (!has_events) { // Se o loop não encontrou nenhum evento
-            if (verbose) printf("Nenhum evento para listar. A enviar RLS NOK.\n");
-            snprintf(response_msg, sizeof(response_msg), "RLS NOK\n");
-            if (verbose) {
-                printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
-            }
-            write(client_fd, response_msg, strlen(response_msg));
-        } else {
-            // A resposta já foi enviada em pedaços
-        }
-        // A responsabilidade de fechar o socket é do loop principal em server.c
+        free(namelist); // Libertar o array de ponteiros
         return; // Retorna para não tentar enviar outra resposta no final
     } else {
         // Comando TCP desconhecido

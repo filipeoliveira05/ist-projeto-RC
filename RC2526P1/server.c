@@ -49,12 +49,31 @@ int main(int argc, char *argv[]) {
 
     // Inicializar o estado global do servidor
     ServerState server_data;
-    server_data.next_eid = 1; // EIDs começam em 1
+    server_data.next_eid = 1; // Valor padrão, caso não haja ficheiro
 
     // --- Fase 1.1: Criação das diretorias de persistência ---
     // O modo 0777 permite que todos os utilizadores leiam, escrevam e executem.
     mkdir("USERS", 0777);
     mkdir("EVENTS", 0777);
+
+    // --- Carregar next_eid de ficheiro, se existir ---
+    char eid_file_path[64];
+    snprintf(eid_file_path, sizeof(eid_file_path), "EVENTS/eid.dat");
+    FILE *eid_file = fopen(eid_file_path, "r");
+    if (eid_file != NULL) {
+        if (fscanf(eid_file, "%d", &server_data.next_eid) != 1) {
+            fprintf(stderr, "Erro ao ler next_eid de %s. A usar 1.\n", eid_file_path);
+            server_data.next_eid = 1;
+        }
+        fclose(eid_file);
+        if (verbose) {
+            printf("next_eid carregado de %s: %d\n", eid_file_path, server_data.next_eid);
+        }
+    } else {
+        if (verbose) {
+            printf("Ficheiro %s não encontrado ou erro ao abrir. next_eid inicializado para 1.\n", eid_file_path);
+        }
+    }
 
     // --- Fase 2: Criação do Socket UDP ---
     int udp_fd;

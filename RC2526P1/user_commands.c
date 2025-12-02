@@ -161,6 +161,12 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
         return;
     }
 
+    // Truncar o nome do evento para o máximo de 10 caracteres, conforme protocolo
+    char truncated_name[11]; // 10 caracteres + '\0'
+    strncpy(truncated_name, name, sizeof(truncated_name) - 1);
+    truncated_name[sizeof(truncated_name) - 1] = '\0'; // Garantir terminação nula
+
+
     FILE *file = fopen(event_fname, "rb");
     if (file == NULL) {
         perror("Erro ao abrir o ficheiro do evento");
@@ -179,11 +185,10 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
     int tcp_fd = create_tcp_socket_and_connect(client_state, &server_addr);
 
     char request_header[512];
-    // Juntar a data e a hora numa única string para enviar ao servidor
-    char full_date[17];
-    snprintf(full_date, sizeof(full_date), "%s %s", date, time);
-    int header_len = snprintf(request_header, sizeof(request_header), "CRE %s %s %s %s %s %s %ld ",
-                              client_state->current_uid, client_state->current_password, name, full_date, num_attendees, event_fname, file_size);
+    // Ordem correta dos argumentos, correspondendo ao sscanf do servidor (num_attendees como int):
+    // CRE <uid> <password> <truncated_name> <date> <time> <attendance_size_int> <fname> <fsize>
+    int header_len = snprintf(request_header, sizeof(request_header), "CRE %s %s %s %s %s %d %s %ld ",
+                              client_state->current_uid, client_state->current_password, truncated_name, date, time, atoi(num_attendees), event_fname, file_size);
     
     if (write(tcp_fd, request_header, header_len) == -1) {
         perror("Erro ao enviar cabeçalho TCP");
@@ -198,6 +203,10 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
         }
     }
     fclose(file);
+
+    // Sinalizar ao servidor que terminámos de enviar dados.
+    // Isto é crucial para evitar deadlocks quando o servidor está à espera de mais dados do ficheiro.
+    shutdown(tcp_fd, SHUT_WR);
 
     char response_buffer[128];
     ssize_t n = read(tcp_fd, response_buffer, sizeof(response_buffer) - 1);
@@ -243,8 +252,9 @@ void handle_list_command(ClientState *client_state) {
 
             char *line = strtok(response_buffer + 7, "\n");
             while (line != NULL) {
-                char eid[6], name[12], date[17]; // Aumentar date para 17 para dd-mm-yyyy hh:mm
-                if (sscanf(line, "%5s %11s %*s %16s", eid, name, date) == 3) { // %16s para a data completa
+                char eid[4], name[11], date[17]; // EID: 3 digitos + '\0'; Name: 10 chars + '\0'; Date: 16 chars + '\0'
+                int state; // O estado é um inteiro
+                if (sscanf(line, "%3s %10s %d %16[^\n]", eid, name, &state, date) == 4) {
                     printf("%-5s | %-12s | %s\n", eid, name, date);
                 }
                 line = strtok(NULL, "\n");
