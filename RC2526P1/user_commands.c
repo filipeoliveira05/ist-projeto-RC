@@ -337,6 +337,64 @@ void handle_show_command(ClientState *client_state, const char *eid) {
     close(tcp_fd);
 }
 
+void handle_myevents_command(ClientState *client_state) {
+    if (!client_state->is_logged_in) {
+        printf("Apenas utilizadores com sessão iniciada podem listar os seus eventos.\n");
+        return;
+    }
+
+    struct sockaddr_in server_addr;
+    int udp_fd = create_udp_socket_and_connect(client_state, &server_addr);
+
+    char request_buffer[128];
+    char response_buffer[4096];
+
+    snprintf(request_buffer, sizeof(request_buffer), "LME %s %s\n", client_state->current_uid, client_state->current_password);
+    sendto(udp_fd, request_buffer, strlen(request_buffer), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
+
+    socklen_t addr_len = sizeof(server_addr);
+    ssize_t n = recvfrom(udp_fd, response_buffer, sizeof(response_buffer) - 1, 0, (struct sockaddr*)&server_addr, &addr_len);
+
+    if (n > 0) {
+        response_buffer[n] = '\0';
+        if (strncmp(response_buffer, "RME OK", 6) == 0) {
+            printf("Eventos criados por si:\n");
+            printf("%-5s | %s\n", "EID", "Estado");
+            printf("------|------------------\n");
+
+            char *token_ptr = response_buffer + 7; // Aponta para depois de "RME OK "
+            char *token;
+            while ((token = strtok_r(token_ptr, " \n", &token_ptr))) {
+                char *eid = token;
+                token = strtok_r(NULL, " \n", &token_ptr);
+                if (!token) break; // Evita erro se a lista terminar de forma ímpar
+                int state_code = atoi(token);
+                const char* state_str;
+                switch(state_code) {
+                    case 0: state_str = "Passado"; break;
+                    case 1: state_str = "Ativo"; break;
+                    case 2: state_str = "Esgotado"; break;
+                    case 3: state_str = "Fechado"; break;
+                    default: state_str = "Desconhecido"; break;
+                }
+                printf("%-5s | %s\n", eid, state_str);
+            }
+        } else if (strncmp(response_buffer, "RME NOK", 7) == 0) {
+            printf("Não criou nenhum evento.\n");
+        } else if (strncmp(response_buffer, "RME NLG", 7) == 0) {
+            printf("Erro: A sua sessão parece ter expirado. Por favor, faça login novamente.\n");
+        } else if (strncmp(response_buffer, "RME WRP", 7) == 0) {
+            printf("Erro: Password incorreta.\n");
+        } else {
+            printf("Resposta inesperada do servidor: %s", response_buffer);
+        }
+    } else {
+        printf("Não foi possível obter resposta do servidor.\n");
+    }
+
+    close(udp_fd);
+}
+
 
 void handle_exit_command(ClientState *client_state) {
     if (client_state->is_logged_in) {

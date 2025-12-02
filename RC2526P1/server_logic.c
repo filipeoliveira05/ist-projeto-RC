@@ -66,6 +66,54 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
                 snprintf(response_buffer, sizeof(response_buffer), "RUR OK\n");
                 if (verbose) printf("User %s removido com sucesso.\n", uid_str);
             }
+        } else if (strcmp(command, "LME") == 0) {
+            if (!user_exists(uid_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RME UNR\n"); // Embora não especificado, é um bom status
+            } else if (!check_user_password(uid_str, password_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RME WRP\n");
+            } else if (!is_user_logged_in(uid_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RME NLG\n");
+            } else {
+                char created_dir_path[64];
+                snprintf(created_dir_path, sizeof(created_dir_path), "USERS/%s/CREATED", uid_str);
+
+                struct dirent **namelist;
+                int n = scandir(created_dir_path, &namelist, NULL, alphasort);
+
+                if (n <= 2) { // Apenas "." e ".."
+                    snprintf(response_buffer, sizeof(response_buffer), "RME NOK\n");
+                    if (n > 0) {
+                        for(int i=0; i<n; i++) free(namelist[i]);
+                        free(namelist);
+                    }
+                } else {
+                    char temp_response[4096] = "RME OK";
+                    for (int i = 0; i < n; i++) {
+                        if (namelist[i]->d_name[0] == '.') {
+                            free(namelist[i]);
+                            continue;
+                        }
+                        
+                        char eid_str[4];
+                        strncpy(eid_str, namelist[i]->d_name, 3);
+                        eid_str[3] = '\0';
+
+                        // TODO: Implementar a função get_event_state(eid_str)
+                        // Por agora, vamos assumir que todos os eventos estão ativos (state=1)
+                        // Esta lógica precisa ser implementada para o projeto estar completo.
+                        int state = 1; 
+
+                        char event_info[10];
+                        snprintf(event_info, sizeof(event_info), " %s %d", eid_str, state);
+                        strcat(temp_response, event_info);
+
+                        free(namelist[i]);
+                    }
+                    free(namelist);
+                    strcat(temp_response, "\n");
+                    strcpy(response_buffer, temp_response);
+                }
+            }
         } else {
             snprintf(response_buffer, sizeof(response_buffer), "RLI ERR\n");
             if (verbose) printf("Comando UDP desconhecido ou não implementado: %s\n", command);
