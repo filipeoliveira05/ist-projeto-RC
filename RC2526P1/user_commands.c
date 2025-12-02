@@ -266,6 +266,78 @@ void handle_list_command(ClientState *client_state) {
     close(tcp_fd);
 }
 
+void handle_show_command(ClientState *client_state, const char *eid) {
+    struct sockaddr_in server_addr;
+    int tcp_fd = create_tcp_socket_and_connect(client_state, &server_addr);
+
+    char request[16];
+    snprintf(request, sizeof(request), "SED %s\n", eid);
+    if (write(tcp_fd, request, strlen(request)) == -1) {
+        perror("Erro ao enviar pedido 'show'");
+        close(tcp_fd);
+        return;
+    }
+
+    char response_buffer[4096];
+    ssize_t bytes_read = read(tcp_fd, response_buffer, sizeof(response_buffer) - 1);
+    if (bytes_read <= 0) {
+        printf("Servidor não respondeu ou fechou a conexão.\n");
+        close(tcp_fd);
+        return;
+    }
+    response_buffer[bytes_read] = '\0';
+
+    if (strncmp(response_buffer, "RSE NOK", 7) == 0) {
+        printf("Evento não encontrado.\n");
+    } else if (strncmp(response_buffer, "RSE OK", 6) == 0) {
+        char owner_uid[7], name[11], date[11], time[6], fname[25];
+        int total_seats, reserved_seats;
+        long fsize;
+        int header_len = 0;
+
+        int num_parsed = sscanf(response_buffer, "RSE OK %6s %10s %10s %5s %d %d %24s %ld %n",
+                                owner_uid, name, date, time, &total_seats, &reserved_seats, fname, &fsize, &header_len);
+
+        if (num_parsed < 8) {
+            printf("Erro: Resposta do servidor mal formatada.\n");
+        } else {
+            printf("Detalhes do Evento %s:\n", eid);
+            printf("  - Nome: %s\n", name);
+            printf("  - Data: %s %s\n", date, time);
+            printf("  - Criador: %s\n", owner_uid);
+            printf("  - Lugares: %d / %d\n", reserved_seats, total_seats);
+            printf("  - Ficheiro de Descrição: %s (%ld bytes)\n", fname, fsize);
+
+            FILE *file = fopen(fname, "wb");
+            if (file == NULL) {
+                perror("Erro ao criar ficheiro local");
+            } else {
+                // Escrever a porção do ficheiro que já foi lida no buffer
+                long initial_data_len = bytes_read - header_len;
+                if (initial_data_len > 0) {
+                    fwrite(response_buffer + header_len, 1, initial_data_len, file);
+                }
+
+                // Ler o resto do ficheiro do socket
+                long remaining_bytes = fsize - initial_data_len;
+                while (remaining_bytes > 0) {
+                    bytes_read = read(tcp_fd, response_buffer, sizeof(response_buffer));
+                    if (bytes_read <= 0) break; // Conexão fechada ou erro
+                    fwrite(response_buffer, 1, bytes_read, file);
+                    remaining_bytes -= bytes_read;
+                }
+                fclose(file);
+                printf("Ficheiro '%s' guardado com sucesso.\n", fname);
+            }
+        }
+    } else {
+        printf("Resposta inesperada do servidor: %s", response_buffer);
+    }
+
+    close(tcp_fd);
+}
+
+
 void handle_exit_command(ClientState *client_state) {
     if (client_state->is_logged_in) {
         printf("Utilizador ainda com sessão iniciada. Por favor, execute o comando 'logout' primeiro.\n");

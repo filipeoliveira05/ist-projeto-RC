@@ -16,6 +16,7 @@ void handle_logout_command(ClientState *client_state);
 void handle_unregister_command(ClientState *client_state);
 void handle_create_command(ClientState *client_state, const char *name, const char *event_fname, const char *date, const char *time, const char *num_attendees);
 void handle_list_command(ClientState *client_state);
+void handle_show_command(ClientState *client_state, const char *eid);
 void handle_exit_command(ClientState *client_state);
 
 // Funções auxiliares de comunicação (se necessário, podem ser internas a user_commands.c)

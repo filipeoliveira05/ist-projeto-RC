@@ -92,6 +92,18 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
 
     char response_msg[128];
 
+    // Log do tipo de pedido TCP, conforme o enunciado, se o modo verbose estiver ativo.
+    if (verbose) {
+        char command_type[4];
+        // Tenta ler os 3 primeiros caracteres como o tipo de comando.
+        if (sscanf(tcp_buffer, "%3s", command_type) == 1) {
+            // Imprime o tipo de comando recebido. Ex: CRE, LST, SED.
+            printf("Recebido pedido TCP: %s (de fd %d)\n", command_type, client_fd);
+        } else {
+            printf("Recebido pedido TCP não identificado (de fd %d)\n", client_fd);
+        }
+    }
+
     // --- Implementar create (CRE/RCE) ---
     if (strncmp(tcp_buffer, "CRE", 3) == 0) {
         char uid[7], password[9], name[11], date[11], time[6], fname[25];
@@ -270,6 +282,71 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         }
         free(namelist); // Libertar o array de ponteiros
         return; // Retorna para não tentar enviar outra resposta no final
+    } else if (strncmp(tcp_buffer, "SED", 3) == 0) {
+        char eid_str[4];
+        if (sscanf(tcp_buffer, "SED %3s", eid_str) == 1) {
+            char event_dir_path[32];
+            snprintf(event_dir_path, sizeof(event_dir_path), "EVENTS/%s", eid_str);
+
+            struct stat st;
+            if (stat(event_dir_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
+                snprintf(response_msg, sizeof(response_msg), "RSE NOK\n");
+            } else {
+                char start_path[64], res_path[64];
+                snprintf(start_path, sizeof(start_path), "%s/START_%s.txt", event_dir_path, eid_str);
+                snprintf(res_path, sizeof(res_path), "%s/RES_%s.txt", event_dir_path, eid_str);
+
+                FILE *start_file = fopen(start_path, "r");
+                FILE *res_file = fopen(res_path, "r");
+
+                if (!start_file || !res_file) {
+                    snprintf(response_msg, sizeof(response_msg), "RSE NOK\n");
+                    if (start_file) fclose(start_file);
+                    if (res_file) fclose(res_file);
+                } else {
+                    char owner_uid[7], name[11], fname[25], date[11], time[6];
+                    int total_seats, reserved_seats = 0;
+
+                    fscanf(start_file, "%6s %10s %24s %d %10s %5s", owner_uid, name, fname, &total_seats, date, time);
+                    fscanf(res_file, "%d", &reserved_seats);
+                    fclose(start_file);
+                    fclose(res_file);
+
+                    char desc_file_path[128];
+                    snprintf(desc_file_path, sizeof(desc_file_path), "%s/DESCRIPTION/%s", event_dir_path, fname);
+
+                    if (stat(desc_file_path, &st) != 0) {
+                        snprintf(response_msg, sizeof(response_msg), "RSE NOK\n");
+                    } else {
+                        long fsize = st.st_size;
+                        char full_date[17];
+                        snprintf(full_date, sizeof(full_date), "%s %s", date, time);
+
+                        // Enviar o cabeçalho da resposta
+                        snprintf(response_msg, sizeof(response_msg), "RSE OK %s %s %s %d %d %s %ld ",
+                                 owner_uid, name, full_date, total_seats, reserved_seats, fname, fsize);
+                        if (verbose) {
+                            printf("Resposta TCP enviada para fd %d: RSE OK (Evento %s)\n", client_fd, eid_str);
+                        }
+                        write(client_fd, response_msg, strlen(response_msg));
+
+                        // Enviar o conteúdo do ficheiro
+                        FILE *desc_file = fopen(desc_file_path, "rb");
+                        if (desc_file) {
+                            char file_buffer[1024];
+                            size_t bytes_read_from_file;
+                            while ((bytes_read_from_file = fread(file_buffer, 1, sizeof(file_buffer), desc_file)) > 0) {
+                                write(client_fd, file_buffer, bytes_read_from_file);
+                            }
+                            fclose(desc_file);
+                        }
+                        return; // Retorna para não enviar a resposta padrão no final
+                    }
+                }
+            }
+        } else {
+            snprintf(response_msg, sizeof(response_msg), "RSE ERR\n");
+        }
     } else {
         // Comando TCP desconhecido
         snprintf(response_msg, sizeof(response_msg), "ERR\n");
