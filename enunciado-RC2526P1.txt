@@ -56,7 +56,9 @@ previously closed by the owner), or an error if the event ID does not exist.
 
 - List reservations made by this user (myreservations). The User application asks the
 ES for a list of the events in which they have reservations. The ES will reply with the
-requested list or inform the user that there is no reservation for active events.
+requested list or inform the user that there is no reservation for active events. In this 
+command, the server sends up to 50 reservations maximum (the most recent 50 reservations
+made by the user). 
 
 - Change Password (changePass). The user can ask the ES server to change the
 password of the logged in user. In the reply, the ES reports if the request was
@@ -187,7 +189,9 @@ reply from the ES, the User closes the TCP connection.
 using the UDP protocol, asking for a list of the events for which the logged in user
 has made a reservation.
 The ES will reply with the requested list, or an information that the user has not
-made any reservation. This information should be displayed to the user.
+made any reservation. This information should be displayed to the user. In this
+command, the server sends up to maximum 50 reservations made by this user (the
+50 most recent reservations made by this user). 
 
 Only one messaging command can be issued at a given time.
 The result of each interaction with the ES should be displayed to the user.
@@ -281,7 +285,8 @@ any reservation. If the user is not logged in, the reply status is NLG. If the u
 UID has made some reservations, the reply status is OK and a list of the
 identifiers EID along with the date and time of the reservation (format: dd-mm-yyyy hh:mm:ss), and the
 number of places reserved (value) by user UID. value is an integer between
-1 and 999. If the password is incorrect the reply status is WRP.
+1 and 999. The server sends a maximum of 50 reservations (the 50 most recent reservations made by the user).
+If the password is incorrect the reply status is WRP.
 
 The User application should always display information about the received replies in a
 human friendly format.
