@@ -441,6 +441,61 @@ void handle_close_command(ClientState *client_state, const char *eid) {
     close(tcp_fd);
 }
 
+void handle_reserve_command(ClientState *client_state, const char *eid, const char *num_seats_str) {
+    if (!client_state->is_logged_in) {
+        printf("Apenas utilizadores com sessão iniciada podem fazer reservas.\n");
+        return;
+    }
+
+    int num_seats = atoi(num_seats_str);
+    if (num_seats <= 0) {
+        printf("Número de lugares inválido.\n");
+        return;
+    }
+
+    struct sockaddr_in server_addr;
+    int tcp_fd = create_tcp_socket_and_connect(client_state, &server_addr);
+
+    char request[128];
+    snprintf(request, sizeof(request), "RID %s %s %s %d\n", client_state->current_uid, client_state->current_password, eid, num_seats);
+    if (write(tcp_fd, request, strlen(request)) == -1) {
+        perror("Erro ao enviar pedido 'reserve'");
+        close(tcp_fd);
+        return;
+    }
+
+    char response_buffer[128];
+    ssize_t n = read(tcp_fd, response_buffer, sizeof(response_buffer) - 1);
+    if (n <= 0) {
+        printf("Servidor não respondeu ou fechou a conexão.\n");
+    } else {
+        response_buffer[n] = '\0';
+        if (strncmp(response_buffer, "RRI ACC", 7) == 0) {
+            printf("Reserva para %d lugares no evento %s efetuada com sucesso.\n", num_seats, eid);
+        } else if (strncmp(response_buffer, "RRI REJ", 7) == 0) {
+            int available_seats;
+            if (sscanf(response_buffer, "RRI REJ %d", &available_seats) == 1) {
+                printf("Reserva rejeitada. Apenas existem %d lugares disponíveis.\n", available_seats);
+            } else {
+                printf("Reserva rejeitada por falta de lugares.\n");
+            }
+        } else if (strncmp(response_buffer, "RRI CLS", 7) == 0) {
+            printf("Reserva falhou: o evento %s já se encontra fechado.\n", eid);
+        } else if (strncmp(response_buffer, "RRI SLD", 7) == 0) {
+            printf("Reserva falhou: o evento %s está esgotado.\n", eid);
+        } else if (strncmp(response_buffer, "RRI PST", 7) == 0) {
+            printf("Reserva falhou: a data do evento %s já passou.\n", eid);
+        } else if (strncmp(response_buffer, "RRI NOK", 7) == 0) {
+            printf("Reserva falhou: o evento %s não existe ou não está ativo.\n", eid);
+        } else if (strncmp(response_buffer, "RRI WRP", 7) == 0) {
+            printf("Reserva falhou: password incorreta.\n");
+        } else {
+            printf("Reserva falhou. Resposta do servidor: %s", response_buffer);
+        }
+    }
+    close(tcp_fd);
+}
+
 
 void handle_exit_command(ClientState *client_state) {
     if (client_state->is_logged_in) {

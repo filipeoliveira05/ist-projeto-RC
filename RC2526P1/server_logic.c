@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <sys/stat.h>
 #include <dirent.h> // Para listar diretorias (comando list)
+#include <time.h>
 
 void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buffer, ServerState *server_data, bool verbose) {
     // ... cole aqui toda a lógica de processamento UDP ...
@@ -411,6 +412,109 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
         }
         return; // Comando CLS processado, retornar
+    } else if (strncmp(tcp_buffer, "SED", 3) == 0) {
+    } else if (strncmp(tcp_buffer, "RID", 3) == 0) {
+        char uid[7], password[9], eid_str[4];
+        int seats_to_reserve;
+        int num_parsed = sscanf(tcp_buffer, "RID %6s %8s %3s %d", uid, password, eid_str, &seats_to_reserve);
+
+        if (verbose) {
+            printf("Recebido pedido TCP: RID (de fd %d) para EID %s, %d lugares\n", client_fd, eid_str, seats_to_reserve);
+        }
+
+        if (num_parsed < 4) {
+            snprintf(response_msg, sizeof(response_msg), "RRI ERR\n");
+        } else if (!user_exists(uid) || !check_user_password(uid, password)) {
+            snprintf(response_msg, sizeof(response_msg), "RRI WRP\n");
+        } else if (!is_user_logged_in(uid)) {
+            snprintf(response_msg, sizeof(response_msg), "RRI NLG\n");
+        } else {
+            char event_dir_path[32];
+            snprintf(event_dir_path, sizeof(event_dir_path), "EVENTS/%s", eid_str);
+
+            struct stat st;
+            if (stat(event_dir_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
+                snprintf(response_msg, sizeof(response_msg), "RRI NOK\n"); // Evento não existe
+            } else {
+                EventState state = get_event_state(eid_str);
+                switch (state) {
+                    case CLOSED:
+                        snprintf(response_msg, sizeof(response_msg), "RRI CLS\n");
+                        break;
+                    case PAST:
+                        snprintf(response_msg, sizeof(response_msg), "RRI PST\n");
+                        break;
+                    case SOLD_OUT:
+                        snprintf(response_msg, sizeof(response_msg), "RRI SLD\n");
+                        break;
+                    case ACTIVE: {
+                        // Ler total de lugares e lugares reservados
+                        char start_path[64], res_path[64];
+                        snprintf(start_path, sizeof(start_path), "%s/START_%s.txt", event_dir_path, eid_str);
+                        snprintf(res_path, sizeof(res_path), "%s/RES_%s.txt", event_dir_path, eid_str);
+
+                        FILE *start_file = fopen(start_path, "r");
+                        FILE *res_file = fopen(res_path, "r");
+
+                        if (!start_file || !res_file) {
+                            snprintf(response_msg, sizeof(response_msg), "RRI ERR\n"); // Ficheiros internos corrompidos
+                        } else {
+                            int total_seats, reserved_seats;
+                            fscanf(start_file, "%*s %*s %*s %d", &total_seats);
+                            fscanf(res_file, "%d", &reserved_seats);
+                            fclose(start_file);
+                            fclose(res_file);
+
+                            int available_seats = total_seats - reserved_seats;
+                            if (seats_to_reserve > available_seats) {
+                                snprintf(response_msg, sizeof(response_msg), "RRI REJ %d\n", available_seats);
+                            } else {
+                                // Atualizar o ficheiro de total de reservas
+                                res_file = fopen(res_path, "w");
+                                fprintf(res_file, "%d\n", reserved_seats + seats_to_reserve);
+                                fclose(res_file);
+
+                                // Criar os ficheiros de registo da reserva
+                                char date_str[11], time_str[7], datetime_str[20];
+                                get_datetime_for_filename(date_str, time_str, sizeof(date_str));
+                                time_t now = time(NULL);
+                                strftime(datetime_str, sizeof(datetime_str), "%d-%m-%Y %H:%M:%S", localtime(&now));
+
+                                char reservation_filename[128];
+                                snprintf(reservation_filename, sizeof(reservation_filename), "R-%s-%s_%s.txt", uid, date_str, time_str);
+
+                                char event_res_path[256], user_res_path[256];
+                                snprintf(event_res_path, sizeof(event_res_path), "%s/RESERVATIONS/%s", event_dir_path, reservation_filename);
+                                snprintf(user_res_path, sizeof(user_res_path), "USERS/%s/RESERVED/%s", uid, reservation_filename);
+
+                                FILE *event_res_file = fopen(event_res_path, "w");
+                                FILE *user_res_file = fopen(user_res_path, "w");
+
+                                if (event_res_file && user_res_file) {
+                                    fprintf(event_res_file, "%s %d %s\n", uid, seats_to_reserve, datetime_str);
+                                    fprintf(user_res_file, "%s %d %s\n", uid, seats_to_reserve, datetime_str);
+                                    snprintf(response_msg, sizeof(response_msg), "RRI ACC\n");
+                                } else {
+                                    // Erro ao criar ficheiros de registo, reverter a contagem
+                                    snprintf(response_msg, sizeof(response_msg), "RRI ERR\n"); // Erro ao criar ficheiros de reserva
+                                    FILE* revert_res_file = fopen(res_path, "w");
+                                    if (revert_res_file) {
+                                        fprintf(revert_res_file, "%d\n", reserved_seats);
+                                        fclose(revert_res_file);
+                                    }
+                                }
+                                if (event_res_file) fclose(event_res_file);
+                                if (user_res_file) fclose(user_res_file);
+                            }
+                        }
+                        break;
+                    }
+                    default:
+                        snprintf(response_msg, sizeof(response_msg), "RRI ERR\n");
+                        break;
+                }
+            }
+        }
     } else if (strncmp(tcp_buffer, "SED", 3) == 0) {
         char eid_str[4];
         if (sscanf(tcp_buffer, "SED %3s", eid_str) == 1) {

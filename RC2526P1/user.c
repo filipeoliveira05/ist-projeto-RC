@@ -101,6 +101,9 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(command, "close") == 0 && num_args == 2) {
             handle_close_command(&client_state, arg1);
 
+        } else if (strcmp(command, "reserve") == 0 && num_args == 3) {
+            handle_reserve_command(&client_state, arg1, arg2);
+
         } else if (strcmp(command, "exit") == 0) {
             handle_exit_command(&client_state);
         } else {

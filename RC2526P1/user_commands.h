@@ -18,6 +18,7 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
 void handle_list_command(ClientState *client_state);
 void handle_show_command(ClientState *client_state, const char *eid);
 void handle_close_command(ClientState *client_state, const char *eid);
+void handle_reserve_command(ClientState *client_state, const char *eid, const char *num_seats);
 void handle_myevents_command(ClientState *client_state);
 void handle_exit_command(ClientState *client_state);
 

@@ -124,7 +124,7 @@ void remove_user_files(const char *uid) {
 
 /**
  * Obtém a data e hora atuais e formata-as para serem usadas em nomes de ficheiros.
- * date_str: YYYY-MM-DD
+ * date_str: YYYYMMDD
  * time_str: HHMMSS
  */
 void get_datetime_for_filename(char *date_str, char *time_str, size_t size) {
@@ -135,7 +135,7 @@ void get_datetime_for_filename(char *date_str, char *time_str, size_t size) {
     ts = localtime(&now); // Usar localtime para a hora local
 
     // Formato YYYY-MM-DD
-    strftime(date_str, size, "%Y-%m-%d", ts);
+    strftime(date_str, size, "%Y%m%d", ts);
     // Formato HHMMSS
     strftime(time_str, size, "%H%M%S", ts);
 }
