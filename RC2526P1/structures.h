@@ -39,7 +39,7 @@ typedef struct Event {
     char owner_uid[7];            // UID do user que criou o evento.
     char filename[25];            // Nome do ficheiro de descrição (max 24 chars + '\0').
     EventState state;             // Estado atual do evento (calculado dinamicamente).
-} Event;
+} Event; // Renomeado para evitar conflito com struct Event em server_logic.c
 
 
 /*

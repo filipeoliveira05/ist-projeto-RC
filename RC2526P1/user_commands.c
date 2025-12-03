@@ -395,6 +395,52 @@ void handle_myevents_command(ClientState *client_state) {
     close(udp_fd);
 }
 
+void handle_close_command(ClientState *client_state, const char *eid) {
+    if (!client_state->is_logged_in) {
+        printf("Apenas utilizadores com sessão iniciada podem fechar eventos.\n");
+        return;
+    }
+
+    struct sockaddr_in server_addr;
+    int tcp_fd = create_tcp_socket_and_connect(client_state, &server_addr);
+
+    char request[128];
+    snprintf(request, sizeof(request), "CLS %s %s %s\n", client_state->current_uid, client_state->current_password, eid);
+    if (write(tcp_fd, request, strlen(request)) == -1) {
+        perror("Erro ao enviar pedido 'close'");
+        close(tcp_fd);
+        return;
+    }
+
+    char response_buffer[128];
+    ssize_t n = read(tcp_fd, response_buffer, sizeof(response_buffer) - 1);
+    if (n <= 0) {
+        printf("Servidor não respondeu ou fechou a conexão.\n");
+    } else {
+        response_buffer[n] = '\0';
+        if (strncmp(response_buffer, "RCL OK", 6) == 0) {
+            printf("Evento %s fechado com sucesso.\n", eid);
+        } else if (strncmp(response_buffer, "RCL NOK", 7) == 0) {
+            printf("Erro ao fechar evento %s: Utilizador não existe ou password incorreta.\n", eid);
+        } else if (strncmp(response_buffer, "RCL NLG", 7) == 0) {
+            printf("Erro ao fechar evento %s: Utilizador não está logado.\n", eid);
+        } else if (strncmp(response_buffer, "RCL NOE", 7) == 0) {
+            printf("Erro ao fechar evento %s: Evento não existe.\n", eid);
+        } else if (strncmp(response_buffer, "RCL EOW", 7) == 0) {
+            printf("Erro ao fechar evento %s: Não é o proprietário do evento.\n", eid);
+        } else if (strncmp(response_buffer, "RCL SLD", 7) == 0) {
+            printf("Erro ao fechar evento %s: Evento já esgotado.\n", eid);
+        } else if (strncmp(response_buffer, "RCL PST", 7) == 0) {
+            printf("Erro ao fechar evento %s: Evento já passou.\n", eid);
+        } else if (strncmp(response_buffer, "RCL CLO", 7) == 0) {
+            printf("Erro ao fechar evento %s: Evento já está fechado.\n", eid);
+        } else {
+            printf("Resposta inesperada do servidor: %s", response_buffer);
+        }
+    }
+    close(tcp_fd);
+}
+
 
 void handle_exit_command(ClientState *client_state) {
     if (client_state->is_logged_in) {

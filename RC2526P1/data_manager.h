@@ -20,5 +20,8 @@ void remove_user_files(const char *uid);
 // Funções de utilidade para datas
 void get_datetime_for_filename(char *date_str, char *time_str, size_t size);
 
+// Funções de gestão de eventos
+void create_end_file(const char *eid_str);
+EventState get_event_state(const char *eid_str);
 
 #endif

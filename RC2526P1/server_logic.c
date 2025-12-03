@@ -98,10 +98,7 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
                         strncpy(eid_str, namelist[i]->d_name, 3);
                         eid_str[3] = '\0';
 
-                        // TODO: Implementar a função get_event_state(eid_str)
-                        // Por agora, vamos assumir que todos os eventos estão ativos (state=1)
-                        // Esta lógica precisa ser implementada para o projeto estar completo.
-                        int state = 1; 
+                        int state = get_event_state(eid_str);
 
                         char event_info[10];
                         snprintf(event_info, sizeof(event_info), " %s %d", eid_str, state);
@@ -252,6 +249,11 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                     perror("Erro ao guardar next_eid em EVENTS/eid.dat");
                 }
             }
+            // Enviar resposta para CRE
+            ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
+            if (bytes_sent == -1) perror("Erro ao escrever para o socket TCP do cliente (CRE)");
+            else if (verbose) printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+            return; // Comando CRE processado, retornar
         }
     } else if (strncmp(tcp_buffer, "LST", 3) == 0) {
         // --- Implementar list (LST/RLS) ---
@@ -314,9 +316,11 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                         int total_seats;
                         // Formato no ficheiro: UID event_name desc_fname event_attend start_date start_time
                         if (fscanf(start_file, "%6s %10s %24s %d %10s %5s", owner_uid, event_name, desc_fname, &total_seats, event_date_str, event_time_str) == 6) {
+                            char current_eid_str[4];
+                            snprintf(current_eid_str, sizeof(current_eid_str), "%03d", eid);
                             char full_event_date[17]; // dd-mm-yyyy hh:mm + '\0'
                             snprintf(full_event_date, sizeof(full_event_date), "%s %s", event_date_str, event_time_str);
-                            int state = 1; // TODO: Calcular o estado real do evento (ativo, passado, etc.)
+                            int state = get_event_state(current_eid_str);
                             snprintf(temp_event_line, sizeof(temp_event_line), "%03d %s %d %s\n", eid, event_name, state, full_event_date);
                             write(client_fd, temp_event_line, strlen(temp_event_line));
                         }
@@ -330,6 +334,83 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         }
         free(namelist); // Libertar o array de ponteiros
         return; // Retorna para não tentar enviar outra resposta no final
+    } else if (strncmp(tcp_buffer, "CLS", 3) == 0) {
+        char uid[7], password[9], eid_str[4];
+        int num_parsed = sscanf(tcp_buffer, "CLS %6s %8s %3s", uid, password, eid_str);
+
+        if (verbose) {
+            printf("Recebido pedido TCP: CLS (de fd %d) para EID %s\n", client_fd, eid_str);
+        }
+
+        if (num_parsed < 3) {
+            snprintf(response_msg, sizeof(response_msg), "RCL ERR\n");
+        } else if (!user_exists(uid) || !check_user_password(uid, password)) {
+            snprintf(response_msg, sizeof(response_msg), "RCL NOK\n");
+        } else if (!is_user_logged_in(uid)) {
+            snprintf(response_msg, sizeof(response_msg), "RCL NLG\n");
+        } else {
+            char event_dir_path[32];
+            snprintf(event_dir_path, sizeof(event_dir_path), "EVENTS/%s", eid_str);
+
+            struct stat st;
+            if (stat(event_dir_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
+                snprintf(response_msg, sizeof(response_msg), "RCL NOE\n");
+            } else {
+                // Verificar se o utilizador é o proprietário do evento
+                char start_path[64];
+                snprintf(start_path, sizeof(start_path), "%s/START_%s.txt", event_dir_path, eid_str);
+                FILE *start_file = fopen(start_path, "r");
+                if (!start_file) {
+                    snprintf(response_msg, sizeof(response_msg), "RCL NOE\n"); // START file missing, treat as non-existent
+                } else {
+                    char owner_uid[7];
+                    // Ler apenas o UID do proprietário do ficheiro START
+                    if (fscanf(start_file, "%6s", owner_uid) != 1) {
+                        snprintf(response_msg, sizeof(response_msg), "RCL NOE\n"); // Ficheiro START mal formatado
+                        fclose(start_file);
+                    } else {
+                        fclose(start_file);
+                        if (strcmp(owner_uid, uid) != 0) {
+                            snprintf(response_msg, sizeof(response_msg), "RCL EOW\n");
+                        } else {
+                            // O utilizador é o proprietário, agora verificar o estado do evento
+                            EventState state = get_event_state(eid_str);
+
+                            switch (state) {
+                                case CLOSED:
+                                    snprintf(response_msg, sizeof(response_msg), "RCL CLO\n");
+                                    break;
+                                case PAST:
+                                    snprintf(response_msg, sizeof(response_msg), "RCL PST\n");
+                                    // Conforme o guia, se o evento já passou, o servidor deve criar o ficheiro END_
+                                    create_end_file(eid_str);
+                                    break;
+                                case SOLD_OUT:
+                                    snprintf(response_msg, sizeof(response_msg), "RCL SLD\n");
+                                    break;
+                                case ACTIVE:
+                                    // Evento ativo e o proprietário quer fechar
+                                    create_end_file(eid_str); // Criar o ficheiro END_
+                                    snprintf(response_msg, sizeof(response_msg), "RCL OK\n");
+                                    if (verbose) printf("Evento %s fechado por %s.\n", eid_str, uid);
+                                    break;
+                                default:
+                                    snprintf(response_msg, sizeof(response_msg), "RCL ERR\n"); // Estado inesperado
+                                    break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Enviar resposta para CLS
+        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
+        if (bytes_sent == -1) {
+            perror("Erro ao escrever para o socket TCP do cliente (CLS)");
+        } else if (verbose) {
+            printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+        }
+        return; // Comando CLS processado, retornar
     } else if (strncmp(tcp_buffer, "SED", 3) == 0) {
         char eid_str[4];
         if (sscanf(tcp_buffer, "SED %3s", eid_str) == 1) {
