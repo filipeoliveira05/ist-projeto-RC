@@ -21,6 +21,7 @@ void handle_close_command(ClientState *client_state, const char *eid);
 void handle_reserve_command(ClientState *client_state, const char *eid, const char *num_seats);
 void handle_myevents_command(ClientState *client_state);
 void handle_myreservations_command(ClientState *client_state);
+void handle_change_password_command(ClientState *client_state, const char *old_password, const char *new_password);
 void handle_exit_command(ClientState *client_state);
 
 // Funções auxiliares de comunicação (se necessário, podem ser internas a user_commands.c)

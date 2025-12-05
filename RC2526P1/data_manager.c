@@ -112,6 +112,20 @@ void remove_login_file(const char *uid) {
 }
 
 /**
+ * Atualiza a password de um utilizador no seu ficheiro _pass.txt.
+ */
+bool update_user_password(const char *uid, const char *new_password) {
+    char path[256];
+    snprintf(path, sizeof(path), "USERS/%s/%s_pass.txt", uid, uid);
+    FILE *f = fopen(path, "w"); // Abre em modo de escrita, sobrescrevendo o conteúdo
+    if (f == NULL) return false;
+
+    fprintf(f, "%s\n", new_password);
+    fclose(f);
+    return true;
+}
+
+/**
  * Remove os ficheiros de um utilizador (unregister).
  * De acordo com o guia, apenas _pass.txt e _login.txt são removidos.
  */

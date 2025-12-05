@@ -24,7 +24,7 @@ typedef enum {
 typedef struct User {
     char uid[7];       // UID de 6 dígitos + '\0'.
     char password[9];  // Password de 8 caracteres + '\0'.
-} Reservation;
+} User; // Renomeado para User para evitar confusão com Reservation
 
 
 /*

@@ -567,6 +567,59 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                 }
             }
         }
+    } else if (strncmp(tcp_buffer, "CPS", 3) == 0) {
+        char uid[7], old_password[9], new_password[9];
+        int num_parsed = sscanf(tcp_buffer, "CPS %6s %8s %8s", uid, old_password, new_password);
+
+        if (verbose) {
+            printf("Recebido pedido TCP: CPS (de fd %d) para UID %s\n", client_fd, uid);
+        }
+
+        if (num_parsed < 3) {
+            snprintf(response_msg, sizeof(response_msg), "RCP ERR\n");
+            if (verbose) printf("Erro: Sintaxe inválida no pedido CPS de %s.\n", uid);
+        } else if (!user_exists(uid)) {
+            snprintf(response_msg, sizeof(response_msg), "RCP NID\n");
+            if (verbose) printf("Erro: Utilizador %s não existe (CPS).\n", uid);
+        } else if (!is_user_logged_in(uid)) {
+            snprintf(response_msg, sizeof(response_msg), "RCP NLG\n");
+            if (verbose) printf("Erro: Utilizador %s não está logado (CPS).\n", uid);
+        } else if (!check_user_password(uid, old_password)) {
+            snprintf(response_msg, sizeof(response_msg), "RCP NOK\n");
+            if (verbose) printf("Erro: Password antiga incorreta para %s (CPS).\n", uid);
+        } else {
+            // Todas as validações passaram, alterar a password
+            if (update_user_password(uid, new_password)) {
+                snprintf(response_msg, sizeof(response_msg), "RCP OK\n");
+                if (verbose) printf("Password do utilizador %s alterada com sucesso.\n", uid);
+            } else {
+                snprintf(response_msg, sizeof(response_msg), "RCP ERR\n"); // Erro interno ao escrever no ficheiro
+                if (verbose) printf("Erro ao alterar password do utilizador %s.\n", uid);
+            }
+        }
+
+        // Enviar resposta para CPS
+        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
+        if (bytes_sent == -1) {
+            perror("Erro ao escrever para o socket TCP do cliente (CPS)");
+        } else if (verbose) {
+            printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+        }
+        return; // Comando CPS processado, retornar
+    } else {
+        // Comando TCP desconhecido
+        snprintf(response_msg, sizeof(response_msg), "ERR\n");
+    }
+
+    // Se o comando não foi tratado por um dos 'if/else if' acima, enviar a resposta genérica de erro
+    // e fechar a conexão (se ainda não tiver sido fechada por um comando específico).
+    if (strncmp(response_msg, "ERR", 3) == 0) { // Apenas envia se for o erro genérico
+        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
+        if (bytes_sent == -1) {
+            perror("Erro ao escrever para o socket TCP do cliente");
+        } else if (verbose) {
+            printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+        }
     } else if (strncmp(tcp_buffer, "SED", 3) == 0) {
         char eid_str[4];
         if (sscanf(tcp_buffer, "SED %3s", eid_str) == 1) {

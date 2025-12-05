@@ -548,6 +548,51 @@ void handle_myreservations_command(ClientState *client_state) {
     close(udp_fd);
 }
 
+void handle_change_password_command(ClientState *client_state, const char *old_password, const char *new_password) {
+    if (!client_state->is_logged_in) {
+        printf("Apenas utilizadores com sessão iniciada podem alterar a password.\n");
+        return;
+    }
+
+    if (strlen(old_password) > 8 || strlen(new_password) > 8) {
+        printf("Erro: As passwords devem ter no máximo 8 caracteres.\n");
+        return;
+    }
+    struct sockaddr_in server_addr;
+    int tcp_fd = create_tcp_socket_and_connect(client_state, &server_addr);
+
+    char request[128];
+    snprintf(request, sizeof(request), "CPS %s %s %s\n", client_state->current_uid, old_password, new_password);
+    if (write(tcp_fd, request, strlen(request)) == -1) {
+        perror("Erro ao enviar pedido 'changePass'");
+        close(tcp_fd);
+        return;
+    }
+
+    char response_buffer[128];
+    ssize_t n = read(tcp_fd, response_buffer, sizeof(response_buffer) - 1);
+    if (n <= 0) {
+        printf("Servidor não respondeu ou fechou a conexão.\n");
+    } else {
+        response_buffer[n] = '\0';
+        if (strncmp(response_buffer, "RCP OK", 6) == 0) {
+            printf("Password alterada com sucesso.\n");
+            // Atualizar a password no estado do cliente
+            strncpy(client_state->current_password, new_password, sizeof(client_state->current_password) - 1);
+            client_state->current_password[sizeof(client_state->current_password) - 1] = '\0';
+        } else if (strncmp(response_buffer, "RCP NLG", 7) == 0) {
+            printf("Erro: Utilizador não está logado.\n");
+        } else if (strncmp(response_buffer, "RCP NOK", 7) == 0) {
+            printf("Erro: Password antiga incorreta.\n");
+        } else if (strncmp(response_buffer, "RCP NID", 7) == 0) {
+            printf("Erro: Utilizador não existe.\n");
+        } else {
+            printf("Erro: Resposta inesperada do servidor: %s", response_buffer);
+        }
+    }
+    close(tcp_fd);
+}
+
 void handle_exit_command(ClientState *client_state) {
     if (client_state->is_logged_in) {
         printf("Utilizador ainda com sessão iniciada. Por favor, execute o comando 'logout' primeiro.\n");
