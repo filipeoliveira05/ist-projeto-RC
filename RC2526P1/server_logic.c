@@ -112,6 +112,59 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
                     strcpy(response_buffer, temp_response);
                 }
             }
+        } else if (strcmp(command, "LMR") == 0) {
+            if (!user_exists(uid_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RMR UNR\n");
+            } else if (!check_user_password(uid_str, password_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RMR WRP\n");
+            } else if (!is_user_logged_in(uid_str)) {
+                snprintf(response_buffer, sizeof(response_buffer), "RMR NLG\n");
+            } else {
+                char reserved_dir_path[64];
+                snprintf(reserved_dir_path, sizeof(reserved_dir_path), "USERS/%s/RESERVED", uid_str);
+
+                struct dirent **namelist;
+                // Usar scandir com alphasort para ordenar os ficheiros. Como o nome começa com YYYYMMDD, a ordem será cronológica.
+                int n = scandir(reserved_dir_path, &namelist, NULL, alphasort);
+
+                if (n <= 2) { // Apenas "." e ".."
+                    snprintf(response_buffer, sizeof(response_buffer), "RMR NOK\n");
+                    if (n > 0) {
+                        for(int i=0; i<n; i++) free(namelist[i]);
+                        free(namelist);
+                    }
+                } else {
+                    char temp_response[8192] = "RMR OK";
+                    int reservations_count = 0;
+                    // Iterar de trás para a frente para obter os mais recentes, até ao limite de 50
+                    for (int i = n - 1; i >= 0 && reservations_count < 50; i--) {
+                        if (namelist[i]->d_name[0] == '.') {
+                            free(namelist[i]);
+                            continue;
+                        }
+
+                        char reservation_filepath[512]; // Aumentado para evitar warning de truncagem
+                        snprintf(reservation_filepath, sizeof(reservation_filepath), "%s/%s", reserved_dir_path, namelist[i]->d_name);
+                        FILE *res_file = fopen(reservation_filepath, "r");
+                        if (res_file) {
+                            char eid_str[4], res_uid[7], res_date[11], res_time[9];
+                            int num_seats;
+                            // Ler do conteúdo do ficheiro: EID UID SEATS DATE TIME
+                            if (fscanf(res_file, "%3s %6s %d %10s %8s", eid_str, res_uid, &num_seats, res_date, res_time) == 5) {
+                                char res_info[50];
+                                snprintf(res_info, sizeof(res_info), " %s %s %s %d", eid_str, res_date, res_time, num_seats);
+                                strcat(temp_response, res_info);
+                                reservations_count++;
+                            }
+                            fclose(res_file);
+                        }
+                        free(namelist[i]);
+                    }
+                    free(namelist);
+                    strcat(temp_response, "\n");
+                    strcpy(response_buffer, temp_response);
+                }
+            }
         } else {
             snprintf(response_buffer, sizeof(response_buffer), "RLI ERR\n");
             if (verbose) printf("Comando UDP desconhecido ou não implementado: %s\n", command);
@@ -412,7 +465,6 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
         }
         return; // Comando CLS processado, retornar
-    } else if (strncmp(tcp_buffer, "SED", 3) == 0) {
     } else if (strncmp(tcp_buffer, "RID", 3) == 0) {
         char uid[7], password[9], eid_str[4];
         int seats_to_reserve;
@@ -491,8 +543,8 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                                 FILE *user_res_file = fopen(user_res_path, "w");
 
                                 if (event_res_file && user_res_file) {
-                                    fprintf(event_res_file, "%s %d %s\n", uid, seats_to_reserve, datetime_str);
-                                    fprintf(user_res_file, "%s %d %s\n", uid, seats_to_reserve, datetime_str);
+                                    fprintf(event_res_file, "%s %s %d %s\n", eid_str, uid, seats_to_reserve, datetime_str);
+                                    fprintf(user_res_file, "%s %s %d %s\n", eid_str, uid, seats_to_reserve, datetime_str);
                                     snprintf(response_msg, sizeof(response_msg), "RRI ACC\n");
                                 } else {
                                     // Erro ao criar ficheiros de registo, reverter a contagem

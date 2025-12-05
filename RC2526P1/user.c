@@ -104,6 +104,9 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(command, "reserve") == 0 && num_args == 3) {
             handle_reserve_command(&client_state, arg1, arg2);
 
+        } else if ((strcmp(command, "myreservations") == 0 || strcmp(command, "myr") == 0) && num_args == 1) {
+            handle_myreservations_command(&client_state);
+
         } else if (strcmp(command, "exit") == 0) {
             handle_exit_command(&client_state);
         } else {
