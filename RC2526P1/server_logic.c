@@ -257,11 +257,11 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             char event_filepath[128];
 
             snprintf(event_dir_path, sizeof(event_dir_path), "EVENTS/%03d", current_eid);
-            mkdir("EVENTS", 0777); // Cria o diretório principal se não existir
-            mkdir(event_dir_path, 0777); // Cria o diretório específico do evento
+            mkdir("EVENTS", 0700); // Cria o diretório principal se não existir
+            mkdir(event_dir_path, 0700); // Cria o diretório específico do evento
             
             snprintf(description_dir_path, sizeof(description_dir_path), "%s/DESCRIPTION", event_dir_path);
-            mkdir(description_dir_path, 0777); // Cria a subdiretoria DESCRIPTION
+            mkdir(description_dir_path, 0700); // Cria a subdiretoria DESCRIPTION
 
             snprintf(event_filepath, sizeof(event_filepath), "%s/%s", description_dir_path, fname);
             FILE *file = fopen(event_filepath, "wb");
@@ -287,7 +287,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                 char meta_path[256];
                 // Criar subdiretoria de reservas
                 snprintf(meta_path, sizeof(meta_path), "EVENTS/%03d/RESERVATIONS", current_eid);
-                mkdir(meta_path, 0777);
+                mkdir(meta_path, 0700);
 
                 // Criar START_<eid>.txt
                 snprintf(meta_path, sizeof(meta_path), "EVENTS/%03d/START_%03d.txt", current_eid, current_eid);

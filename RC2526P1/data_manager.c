@@ -72,13 +72,13 @@ void create_user_files(const char *uid, const char *password) {
 
     // Criar diretoria USERS/<uid>
     snprintf(path, sizeof(path), "USERS/%s", uid);
-    mkdir(path, 0777);
+    mkdir(path, 0700);
 
     // Criar subdiretorias CREATED e RESERVED
     snprintf(path, sizeof(path), "USERS/%s/CREATED", uid);
-    mkdir(path, 0777);
+    mkdir(path, 0700);
     snprintf(path, sizeof(path), "USERS/%s/RESERVED", uid);
-    mkdir(path, 0777);
+    mkdir(path, 0700);
 
     // Criar ficheiro USERS/<uid>/<uid>_pass.txt
     snprintf(path, sizeof(path), "USERS/%s/%s_pass.txt", uid, uid);

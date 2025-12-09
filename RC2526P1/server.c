@@ -52,9 +52,8 @@ int main(int argc, char *argv[]) {
     server_data.next_eid = 1; // Valor padrão, caso não haja ficheiro
 
     // --- Fase 1.1: Criação das diretorias de persistência ---
-    // O modo 0777 permite que todos os utilizadores leiam, escrevam e executem.
-    mkdir("USERS", 0777);
-    mkdir("EVENTS", 0777);
+    mkdir("USERS", 0700);
+    mkdir("EVENTS", 0700);
 
     // --- Carregar next_eid de ficheiro, se existir ---
     char eid_file_path[64];
