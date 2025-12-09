@@ -186,6 +186,11 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
         return;
     }
 
+    if (!is_valid_number_attendees(num_attendees)) {
+        printf("Erro: O número de lugares deve ser um valor numérico entre 10 e 999.\n");
+        return;
+    }
+
     // Truncar o nome do evento para o máximo de 10 caracteres, conforme protocolo
     char truncated_name[11]; // 10 caracteres + '\0'
     strncpy(truncated_name, name, sizeof(truncated_name) - 1);

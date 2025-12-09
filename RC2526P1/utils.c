@@ -1,6 +1,7 @@
 #include "utils.h"
 #include <string.h> // Para strlen
 #include <ctype.h>  // Para isalnum
+#include <stdlib.h> // Para atoi()
 
 /**
  * Valida se uma password tem exatamente 8 caracteres e se são todos alfanuméricos.
@@ -97,5 +98,23 @@ bool is_valid_datetime_format(const char *datetime_str) {
     // mm (14-15)
     if (!isdigit(datetime_str[14]) || !isdigit(datetime_str[15])) return false;
 
+    return true;
+}
+
+/**
+ * Valida se o número de lugares é uma string que representa um inteiro entre 10 e 999.
+ */
+bool is_valid_number_attendees(const char *num_str) {
+    // Verifica se a string contém apenas dígitos
+    for (int i = 0; num_str[i] != '\0'; i++) {
+        if (!isdigit((unsigned char)num_str[i])) {
+            return false;
+        }
+    }
+
+    int num = atoi(num_str);
+    if (num < 10 || num > 999) {
+        return false;
+    }
     return true;
 }
