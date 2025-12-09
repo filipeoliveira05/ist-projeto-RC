@@ -2,11 +2,11 @@ CC = gcc
 CFLAGS = -Wall -g
 
 # User
-USER_SRCS = user.c user_commands.c
+USER_SRCS = user.c user_commands.c utils.c
 USER_OBJS = $(USER_SRCS:.c=.o)
 
 # Servidor (ES)
-ES_SRCS = server.c server_logic.c data_manager.c
+ES_SRCS = server.c server_logic.c data_manager.c utils.c
 ES_OBJS = $(ES_SRCS:.c=.o)
 
 all: user ES

@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <dirent.h> // Para listar diretorias (comando list)
 #include <time.h>
+#include "utils.h" // Inclui a função is_valid_password
 
 void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buffer, ServerState *server_data, bool verbose) {
     // ... cole aqui toda a lógica de processamento UDP ...
@@ -26,9 +27,13 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
 
     // Toda a lógica de processamento de comandos UDP que já existia
     if (sscanf(buffer, "%3s %6s %8s\n", command, uid_str, password_str) == 3) {
-        if (strcmp(command, "LIN") == 0) {
+        if (strcmp(command, "LIN") == 0) { // Comando LIN
+            if (!is_valid_password(password_str)) { // Validação da password
+                snprintf(response_buffer, sizeof(response_buffer), "RLI ERR\n");
+                if (verbose) printf("Erro: Password inválida no pedido LIN de %s.\n", uid_str);
+            }
             // Se a diretoria do user não existe, OU se existe mas não tem ficheiro de password (caso de re-registo)
-            if (!user_exists(uid_str) || !user_password_file_exists(uid_str)) {
+            else if (!user_exists(uid_str) || !user_password_file_exists(uid_str)) {
                 create_user_files(uid_str, password_str);
                 create_login_file(uid_str);
                 snprintf(response_buffer, sizeof(response_buffer), "RLI REG\n");
@@ -578,6 +583,9 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         if (num_parsed < 3) {
             snprintf(response_msg, sizeof(response_msg), "RCP ERR\n");
             if (verbose) printf("Erro: Sintaxe inválida no pedido CPS de %s.\n", uid);
+        } else if (!is_valid_password(old_password) || !is_valid_password(new_password)) { // Validação da password
+            snprintf(response_msg, sizeof(response_msg), "RCP ERR\n");
+            if (verbose) printf("Erro: Sintaxe e formato de password inválido no pedido CPS de %s.\n", uid);
         } else if (!user_exists(uid)) {
             snprintf(response_msg, sizeof(response_msg), "RCP NID\n");
             if (verbose) printf("Erro: Utilizador %s não existe (CPS).\n", uid);

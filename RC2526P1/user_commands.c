@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <netdb.h> // Para gethostbyname
 #include <sys/stat.h> // Para stat()
+#include "utils.h" // Inclui a função is_valid_password
 
 // Função de utilidade para tratamento de erros no cliente
 void user_handle_error(const char *msg) {
@@ -50,7 +51,10 @@ void handle_login_command(ClientState *client_state, const char *uid, const char
         printf("Já existe um utilizador com sessão iniciada. Por favor, faça logout primeiro.\n");
         return;
     }
-
+    if (!is_valid_password(password)) {
+        printf("Erro: A password deve ter exatamente 8 caracteres alfanuméricos.\n");
+        return;
+    }
     struct sockaddr_in server_addr;
     int udp_fd = create_udp_socket_and_connect(client_state, &server_addr);
 
@@ -554,8 +558,8 @@ void handle_change_password_command(ClientState *client_state, const char *old_p
         return;
     }
 
-    if (strlen(old_password) > 8 || strlen(new_password) > 8) {
-        printf("Erro: As passwords devem ter no máximo 8 caracteres.\n");
+    if (!is_valid_password(old_password) || !is_valid_password(new_password)) {
+        printf("Erro: As passwords devem ter exatamente 8 caracteres alfanuméricos.\n");
         return;
     }
     struct sockaddr_in server_addr;
