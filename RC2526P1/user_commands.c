@@ -169,6 +169,16 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
         return;
     }
 
+    if (!is_valid_event_name(name)) {
+        printf("Erro: O nome do evento deve ter no máximo 10 caracteres alfanuméricos.\n");
+        return;
+    }
+
+    if (!is_valid_event_filename(event_fname)) {
+        printf("Erro: O nome do ficheiro de descrição deve ter no máximo 24 caracteres e conter apenas alfanuméricos, '-', '_' ou '.'.\n");
+        return;
+    }
+
     // Truncar o nome do evento para o máximo de 10 caracteres, conforme protocolo
     char truncated_name[11]; // 10 caracteres + '\0'
     strncpy(truncated_name, name, sizeof(truncated_name) - 1);

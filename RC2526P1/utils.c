@@ -31,3 +31,33 @@ bool is_valid_uid(const char *uid) {
     }
     return true;
 }
+
+/**
+ * Valida se o nome de um evento tem no máximo 10 caracteres e se são todos alfanuméricos.
+ */
+bool is_valid_event_name(const char *name) {
+    if (strlen(name) == 0 || strlen(name) > 10) {
+        return false;
+    }
+    for (int i = 0; name[i] != '\0'; i++) {
+        if (!isalnum((unsigned char)name[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Valida se o nome de um ficheiro de evento tem no máximo 24 caracteres e se contém apenas caracteres alfanuméricos, '-', '_' ou '.'.
+ */
+bool is_valid_event_filename(const char *filename) {
+    if (strlen(filename) == 0 || strlen(filename) > 24) {
+        return false;
+    }
+    for (int i = 0; filename[i] != '\0'; i++) {
+        if (!isalnum((unsigned char)filename[i]) && filename[i] != '-' && filename[i] != '_' && filename[i] != '.') {
+            return false;
+        }
+    }
+    return true;
+}
