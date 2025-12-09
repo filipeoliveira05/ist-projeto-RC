@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <netdb.h> // Para gethostbyname
 #include <sys/stat.h> // Para stat()
+#include <errno.h> // Para errno
 #include "utils.h" // Inclui a função is_valid_password
 
 // Função de utilidade para tratamento de erros no cliente
@@ -92,8 +93,12 @@ void handle_login_command(ClientState *client_state, const char *uid, const char
         } else {
             printf("Resposta inesperada do servidor: %s", response_buffer);
         }
-    } else {
-        printf("Não foi possível obter resposta do servidor.\n");
+    } else { // n <= 0
+        if (n == 0) {
+            printf("Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
+        } else {
+            perror("Erro ao receber resposta do servidor");
+        }
     }
     close(udp_fd);
 }
@@ -127,7 +132,11 @@ void handle_logout_command(ClientState *client_state) {
             printf("Logout falhou. Resposta do servidor: %s", response_buffer);
         }
     } else {
-        printf("Não foi possível obter resposta do servidor.\n");
+        if (n == 0) {
+            printf("Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
+        } else {
+            perror("Erro ao receber resposta do servidor");
+        }
     }
     close(udp_fd);
 }
@@ -158,7 +167,11 @@ void handle_unregister_command(ClientState *client_state) {
             printf("Anulação de registo falhou. Resposta do servidor: %s", response_buffer);
         }
     } else {
-        printf("Não foi possível obter resposta do servidor.\n");
+        if (n == 0) {
+            printf("Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
+        } else {
+            perror("Erro ao receber resposta do servidor");
+        }
     }
     close(udp_fd);
 }
@@ -249,7 +262,12 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
             printf("Não foi possível criar o evento. Resposta do servidor: %s", response_buffer);
         }
     }
-    close(tcp_fd);
+    if (n == 0) {
+        printf("Servidor fechou a conexão inesperadamente.\n");
+    } else if (n < 0) {
+        perror("Erro de comunicação com o servidor");
+    }
+    close(tcp_fd); // Fechar o socket TCP
 }
 
 void handle_list_command(ClientState *client_state) {
@@ -291,7 +309,11 @@ void handle_list_command(ClientState *client_state) {
             }
         } else {
             printf("Resposta inesperada do servidor: %s", response_buffer);
-        }
+        } // else if (total_bytes_read <= 0)
+    } else if (total_bytes_read == 0) {
+        printf("Servidor não enviou dados ou fechou a conexão.\n");
+    } else { // total_bytes_read < 0
+        perror("Erro de comunicação com o servidor");
     }
     close(tcp_fd);
 }
@@ -419,7 +441,11 @@ void handle_myevents_command(ClientState *client_state) {
             printf("Resposta inesperada do servidor: %s", response_buffer);
         }
     } else {
-        printf("Não foi possível obter resposta do servidor.\n");
+        if (n == 0) {
+            printf("Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
+        } else {
+            perror("Erro ao receber resposta do servidor");
+        }
     }
 
     close(udp_fd);
