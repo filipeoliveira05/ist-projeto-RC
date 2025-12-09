@@ -28,7 +28,11 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
     // Toda a lógica de processamento de comandos UDP que já existia
     if (sscanf(buffer, "%3s %6s %8s\n", command, uid_str, password_str) == 3) {
         if (strcmp(command, "LIN") == 0) { // Comando LIN
-            if (!is_valid_password(password_str)) { // Validação da password
+            if (!is_valid_uid(uid_str)) { // Validação do UID
+                snprintf(response_buffer, sizeof(response_buffer), "RLI ERR\n");
+                if (verbose) printf("Erro: UID inválido no pedido LIN: %s.\n", uid_str);
+            }
+            else if (!is_valid_password(password_str)) { // Validação da password
                 snprintf(response_buffer, sizeof(response_buffer), "RLI ERR\n");
                 if (verbose) printf("Erro: Password inválida no pedido LIN de %s.\n", uid_str);
             }
@@ -49,7 +53,10 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
                 }
             }
         } else if (strcmp(command, "LOU") == 0) {
-            if (!user_exists(uid_str)) {
+            if (!is_valid_uid(uid_str)) { // Validação do UID
+                snprintf(response_buffer, sizeof(response_buffer), "RLO ERR\n");
+                if (verbose) printf("Erro: UID inválido no pedido LOU: %s.\n", uid_str);
+            } else if (!user_exists(uid_str)) {
                 snprintf(response_buffer, sizeof(response_buffer), "RLO UNR\n");
             } else if (!check_user_password(uid_str, password_str)) {
                 snprintf(response_buffer, sizeof(response_buffer), "RLO WRP\n");
@@ -61,7 +68,10 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
                 if (verbose) printf("User %s fez logout com sucesso.\n", uid_str);
             }
         } else if (strcmp(command, "UNR") == 0) {
-            if (!user_exists(uid_str)) {
+            if (!is_valid_uid(uid_str)) { // Validação do UID
+                snprintf(response_buffer, sizeof(response_buffer), "RUR ERR\n");
+                if (verbose) printf("Erro: UID inválido no pedido UNR: %s.\n", uid_str);
+            } else if (!user_exists(uid_str)) {
                 snprintf(response_buffer, sizeof(response_buffer), "RUR UNR\n");
             } else if (!check_user_password(uid_str, password_str)) {
                 snprintf(response_buffer, sizeof(response_buffer), "RUR WRP\n");
@@ -73,7 +83,10 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
                 if (verbose) printf("User %s removido com sucesso.\n", uid_str);
             }
         } else if (strcmp(command, "LME") == 0) {
-            if (!user_exists(uid_str)) {
+            if (!is_valid_uid(uid_str)) { // Validação do UID
+                snprintf(response_buffer, sizeof(response_buffer), "RME ERR\n");
+                if (verbose) printf("Erro: UID inválido no pedido LME: %s.\n", uid_str);
+            } else if (!user_exists(uid_str)) {
                 snprintf(response_buffer, sizeof(response_buffer), "RME UNR\n"); // Embora não especificado, é um bom status
             } else if (!check_user_password(uid_str, password_str)) {
                 snprintf(response_buffer, sizeof(response_buffer), "RME WRP\n");
@@ -118,7 +131,10 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
                 }
             }
         } else if (strcmp(command, "LMR") == 0) {
-            if (!user_exists(uid_str)) {
+            if (!is_valid_uid(uid_str)) { // Validação do UID
+                snprintf(response_buffer, sizeof(response_buffer), "RMR ERR\n");
+                if (verbose) printf("Erro: UID inválido no pedido LMR: %s.\n", uid_str);
+            } else if (!user_exists(uid_str)) {
                 snprintf(response_buffer, sizeof(response_buffer), "RMR UNR\n");
             } else if (!check_user_password(uid_str, password_str)) {
                 snprintf(response_buffer, sizeof(response_buffer), "RMR WRP\n");
@@ -224,7 +240,10 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         // 2. Validar o pedido
         if (num_parsed < 8) { // Agora esperamos 8 argumentos no cabeçalho
             snprintf(response_msg, sizeof(response_msg), "RCE ERR\n");
-        } else if (!user_exists(uid) || !check_user_password(uid, password)) {
+        } else if (!is_valid_uid(uid)) { // Validação do UID
+            snprintf(response_msg, sizeof(response_msg), "RCE ERR\n");
+            if (verbose) printf("Erro: UID inválido no pedido CRE: %s.\n", uid);
+        } else if (!user_exists(uid) || !check_user_password(uid, password)) { // Validação do user e password
             snprintf(response_msg, sizeof(response_msg), "RCE WRP\n");
         } else if (!is_user_logged_in(uid)) {
             snprintf(response_msg, sizeof(response_msg), "RCE NLG\n");
@@ -405,6 +424,9 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             snprintf(response_msg, sizeof(response_msg), "RCL ERR\n");
         } else if (!user_exists(uid) || !check_user_password(uid, password)) {
             snprintf(response_msg, sizeof(response_msg), "RCL NOK\n");
+        } else if (!is_valid_uid(uid)) { // Validação do UID
+            snprintf(response_msg, sizeof(response_msg), "RCL ERR\n");
+            if (verbose) printf("Erro: UID inválido no pedido CLS: %s.\n", uid);
         } else if (!is_user_logged_in(uid)) {
             snprintf(response_msg, sizeof(response_msg), "RCL NLG\n");
         } else {
@@ -481,7 +503,10 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
 
         if (num_parsed < 4) {
             snprintf(response_msg, sizeof(response_msg), "RRI ERR\n");
-        } else if (!user_exists(uid) || !check_user_password(uid, password)) {
+        } else if (!is_valid_uid(uid)) { // Validação do UID
+            snprintf(response_msg, sizeof(response_msg), "RRI ERR\n");
+            if (verbose) printf("Erro: UID inválido no pedido RID: %s.\n", uid);
+        } else if (!user_exists(uid) || !check_user_password(uid, password)) { // Validação do user e password
             snprintf(response_msg, sizeof(response_msg), "RRI WRP\n");
         } else if (!is_user_logged_in(uid)) {
             snprintf(response_msg, sizeof(response_msg), "RRI NLG\n");
@@ -583,7 +608,10 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         if (num_parsed < 3) {
             snprintf(response_msg, sizeof(response_msg), "RCP ERR\n");
             if (verbose) printf("Erro: Sintaxe inválida no pedido CPS de %s.\n", uid);
-        } else if (!is_valid_password(old_password) || !is_valid_password(new_password)) { // Validação da password
+        } else if (!is_valid_uid(uid)) { // Validação do UID
+            snprintf(response_msg, sizeof(response_msg), "RCP ERR\n");
+            if (verbose) printf("Erro: UID inválido no pedido CPS: %s.\n", uid);
+        } else if (!is_valid_password(old_password) || !is_valid_password(new_password)) { // Validação das passwords
             snprintf(response_msg, sizeof(response_msg), "RCP ERR\n");
             if (verbose) printf("Erro: Sintaxe e formato de password inválido no pedido CPS de %s.\n", uid);
         } else if (!user_exists(uid)) {

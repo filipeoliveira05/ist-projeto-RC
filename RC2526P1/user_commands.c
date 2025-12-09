@@ -51,6 +51,10 @@ void handle_login_command(ClientState *client_state, const char *uid, const char
         printf("Já existe um utilizador com sessão iniciada. Por favor, faça logout primeiro.\n");
         return;
     }
+    if (!is_valid_uid(uid)) {
+        printf("Erro: O UID deve ter exatamente 6 dígitos.\n");
+        return;
+    }
     if (!is_valid_password(password)) {
         printf("Erro: A password deve ter exatamente 8 caracteres alfanuméricos.\n");
         return;

@@ -16,3 +16,18 @@ bool is_valid_password(const char *password) {
     }
     return true;
 }
+
+/**
+ * Valida se um UID tem exatamente 6 caracteres e se são todos dígitos.
+ */
+bool is_valid_uid(const char *uid) {
+    if (strlen(uid) != 6) {
+        return false;
+    }
+    for (int i = 0; uid[i] != '\0'; i++) {
+        if (!isdigit((unsigned char)uid[i])) {
+            return false;
+        }
+    }
+    return true;
+}
