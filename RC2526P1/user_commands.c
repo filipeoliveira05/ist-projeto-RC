@@ -179,6 +179,13 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
         return;
     }
 
+    char full_datetime[17]; // dd-mm-yyyy hh:mm + '\0'
+    snprintf(full_datetime, sizeof(full_datetime), "%s %s", date, time);
+    if (!is_valid_datetime_format(full_datetime)) {
+        printf("Erro: O formato da data e hora deve ser 'dd-mm-yyyy hh:mm'.\n");
+        return;
+    }
+
     // Truncar o nome do evento para o máximo de 10 caracteres, conforme protocolo
     char truncated_name[11]; // 10 caracteres + '\0'
     strncpy(truncated_name, name, sizeof(truncated_name) - 1);
