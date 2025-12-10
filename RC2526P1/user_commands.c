@@ -195,7 +195,7 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
     char full_datetime[17]; // dd-mm-yyyy hh:mm + '\0'
     snprintf(full_datetime, sizeof(full_datetime), "%s %s", date, time);
     if (!is_valid_datetime_format(full_datetime)) {
-        printf("Erro: O formato da data e hora deve ser 'dd-mm-yyyy hh:mm'.\n");
+        printf("Erro: Data e hora inválida ou formato incorreto (dd-mm-yyyy hh:mm).\n");
         return;
     }
 
