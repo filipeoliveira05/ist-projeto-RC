@@ -635,6 +635,14 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                 }
             }
         }
+        // Enviar resposta para RID
+        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
+        if (bytes_sent == -1) {
+            perror("Erro ao escrever para o socket TCP do cliente (RID)");
+        } else if (verbose) {
+            printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+        }
+        return; // Comando RID processado, retornar
     } else if (strncmp(tcp_buffer, "CPS", 3) == 0) {
         char uid[7], old_password[9], new_password[9];
         int num_parsed = sscanf(tcp_buffer, "CPS %6s %8s %8s", uid, old_password, new_password);
@@ -675,21 +683,6 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
         }
         return; // Comando CPS processado, retornar
-    } else {
-        // Comando TCP desconhecido
-        snprintf(response_msg, sizeof(response_msg), "ERR\n");
-        if (verbose) printf("Verbose: Unknown TCP command received.\n");
-    }
-
-    // Se o comando não foi tratado por um dos 'if/else if' acima, enviar a resposta genérica de erro
-    // e fechar a conexão (se ainda não tiver sido fechada por um comando específico).
-    if (strncmp(response_msg, "ERR", 3) == 0) { // Apenas envia se for o erro genérico
-        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
-        if (bytes_sent == -1) {
-            perror("Erro ao escrever para o socket TCP do cliente");
-        } else if (verbose) {
-            printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
-        }
     } else if (strncmp(tcp_buffer, "SED", 3) == 0) {
         char eid_str[4];
         if (sscanf(tcp_buffer, "SED %3s", eid_str) == 1) {
@@ -761,13 +754,13 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         // Comando TCP desconhecido
         snprintf(response_msg, sizeof(response_msg), "ERR\n");
         if (verbose) printf("Verbose: Unknown TCP command received.\n");
-    }
-
-    // Enviar resposta e fechar conexão
-    ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
-    if (bytes_sent == -1) {
-        perror("Erro ao escrever para o socket TCP do cliente");
-    } else if (verbose) {
-        printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+        // Enviar resposta de erro para comando desconhecido
+        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
+        if (bytes_sent == -1) {
+            perror("Erro ao escrever para o socket TCP do cliente (ERR)");
+        } else if (verbose) {
+            printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+        }
+        return; // Terminar após tratar o erro
     }
 }
