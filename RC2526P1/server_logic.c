@@ -23,7 +23,7 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
     if (verbose) {
         // Remove a quebra de linha do buffer para um log mais limpo
         buffer[strcspn(buffer, "\n")] = 0;
-        printf("Recebido pedido UDP de %s:%d -> [%s]\n", inet_ntoa(client_addr->sin_addr), ntohs(client_addr->sin_port), buffer);
+        printf("VERBOSE: Received UDP request from %s:%d -> [%s]\n", inet_ntoa(client_addr->sin_addr), ntohs(client_addr->sin_port), buffer);
     }
 
     // Toda a lógica de processamento de comandos UDP que já existia
@@ -217,7 +217,7 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
     if (sent_bytes == -1) {
         perror("Erro ao enviar resposta UDP");
     } else if (verbose) {
-        printf("Resposta UDP enviada para %s:%d: %s", inet_ntoa(client_addr->sin_addr), ntohs(client_addr->sin_port), response_buffer);
+        printf("VERBOSE: UDP response sent to %s:%d: %s", inet_ntoa(client_addr->sin_addr), ntohs(client_addr->sin_port), response_buffer);
     }
 }
 
@@ -238,7 +238,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             char preview[41]; // 40 chars + null terminator
             strncpy(preview, tcp_buffer, 40);
             preview[40] = '\0';
-            printf("Verbose: TCP request from fd %d -> [%s] \"%s...\"\n", client_fd, command_type, preview);
+            printf("VERBOSE: Received TCP request from fd %d -> [%s] \"%s...\"\n", client_fd, command_type, preview);
         }
     }
 
@@ -353,7 +353,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             // Enviar resposta para CRE
             ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
             if (bytes_sent == -1) perror("Erro ao escrever para o socket TCP do cliente (CRE)");
-            else if (verbose) printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+            else if (verbose) printf("VERBOSE CRE: TCP response sent to fd %d: %s", client_fd, response_msg);
             return; // Comando CRE processado, retornar
         }
     } else if (strncmp(tcp_buffer, "LST", 3) == 0) {
@@ -519,7 +519,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         if (bytes_sent == -1) {
             perror("Erro ao escrever para o socket TCP do cliente (CLS)");
         } else if (verbose) {
-            printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+            printf("VERBOSE CLS: TCP response sent to fd %d: %s", client_fd, response_msg);
         }
         return; // Comando CLS processado, retornar
     } else if (strncmp(tcp_buffer, "RID", 3) == 0) {
@@ -640,7 +640,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         if (bytes_sent == -1) {
             perror("Erro ao escrever para o socket TCP do cliente (RID)");
         } else if (verbose) {
-            printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+            printf("VERBOSE RID: TCP response sent to fd %d: %s", client_fd, response_msg);
         }
         return; // Comando RID processado, retornar
     } else if (strncmp(tcp_buffer, "CPS", 3) == 0) {
@@ -680,7 +680,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         if (bytes_sent == -1) {
             perror("Erro ao escrever para o socket TCP do cliente (CPS)");
         } else if (verbose) {
-            printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+            printf("VERBOSE CPS: TCP response sent to fd %d: %s", client_fd, response_msg);
         }
         return; // Comando CPS processado, retornar
     } else if (strncmp(tcp_buffer, "SED", 3) == 0) {
@@ -759,7 +759,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         if (bytes_sent == -1) {
             perror("Erro ao escrever para o socket TCP do cliente (ERR)");
         } else if (verbose) {
-            printf("Resposta TCP enviada para fd %d: %s", client_fd, response_msg);
+            printf("VERBOSE: TCP response sent to fd %d: %s", client_fd, response_msg);
         }
         return; // Terminar após tratar o erro
     }

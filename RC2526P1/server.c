@@ -44,7 +44,7 @@ int main(int argc, char *argv[]) {
 
     printf("Servidor de Eventos (ES) a iniciar...\n");
     if (verbose) {
-        printf("Verbose: Verbose mode enabled.\n");
+        printf("VERBOSE SERVER.C: Verbose mode enabled.\n");
     }
 
     // Inicializar o estado global do servidor
@@ -66,11 +66,11 @@ int main(int argc, char *argv[]) {
         }
         fclose(eid_file);
         if (verbose) {
-            printf("Verbose: Loaded next_eid from %s: %d\n", eid_file_path, server_data.next_eid);
+            printf("VERBOSE SERVER.C: Loaded next_eid from %s: %d\n", eid_file_path, server_data.next_eid);
         }
     } else {
         if (verbose) {
-            printf("Verbose: File %s not found. Initializing next_eid to 1.\n", eid_file_path);
+            printf("VERBOSE SERVER.C: File %s not found. Initializing next_eid to 1.\n", eid_file_path);
         }
     }
 
@@ -178,7 +178,7 @@ int main(int argc, char *argv[]) {
                     if (client_tcp_fds[i] == 0) { // Slot encontrado
                         client_tcp_fds[i] = new_tcp_fd;
                         if (verbose) {
-                            printf("Verbose: New TCP connection accepted from %s:%d (fd: %d).\n",
+                            printf("VERBOSE SERVER.C: New TCP connection accepted from %s:%d (fd: %d).\n",
                                    inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), new_tcp_fd);
                         }
                         break;
@@ -200,7 +200,7 @@ int main(int argc, char *argv[]) {
                 if (bytes_read <= 0) { // Conexão fechada pelo cliente ou erro
                     if (bytes_read == 0) { // Cliente fechou a conexão graciosamente
                         if (verbose) {
-                            printf("Verbose: TCP client (fd: %d) disconnected.\n", client_tcp_fds[i]);
+                            printf("VERBOSE SERVER.C: TCP client (fd: %d) disconnected.\n", client_tcp_fds[i]);
                         }
                     } else { // Erro na leitura
                         perror("Erro ao ler do socket TCP do cliente");
@@ -211,7 +211,7 @@ int main(int argc, char *argv[]) {
                     tcp_buffer[bytes_read] = '\0'; // Termina a string lida com null
                     if (verbose) {
                         // Imprime apenas o início do buffer para não poluir o log com dados de ficheiro
-                        printf("Verbose: Received data from TCP client (fd: %d), processing...\n", client_tcp_fds[i]);
+                        printf("VERBOSE SERVER.C: Received data from TCP client (fd: %d), processing...\n", client_tcp_fds[i]);
                     }
 
                     process_tcp_request(client_tcp_fds[i], tcp_buffer, bytes_read, &server_data, verbose);
