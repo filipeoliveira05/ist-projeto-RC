@@ -217,7 +217,6 @@ int main(int argc, char *argv[]) {
                     process_tcp_request(client_tcp_fds[i], tcp_buffer, bytes_read, &server_data, verbose);
                     close(client_tcp_fds[i]);
                     client_tcp_fds[i] = 0; // Marca o slot como livre
-                    break; // Sai do loop 'for' para reavaliar os fds no próximo ciclo do select
                 }
             }
         }
