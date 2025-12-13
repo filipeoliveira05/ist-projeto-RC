@@ -10,4 +10,7 @@ RC2526P1/ES
 RC2526P1/user
 RC2526P1/*.o
 
+SCRIPTS_25-26/
+Event_Data/
+
 plan.txt
