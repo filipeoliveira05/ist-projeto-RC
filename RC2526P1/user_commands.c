@@ -91,24 +91,19 @@ void handle_login_command(ClientState *client_state, const char *uid, const char
         } else if (strncmp(response_buffer, "RLI NOK", 7) == 0) {
             printf("Login falhou: password incorreta ou utilizador não existe.\n");
         } else {
-            printf("Resposta inesperada do servidor: %s", response_buffer);
+            printf("Login falhou. Resposta inesperada do servidor: %s", response_buffer);
         }
     } else { // n <= 0
         if (n == 0) {
-            printf("Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
+            printf("Login falhou. Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
         } else {
-            perror("Erro ao receber resposta do servidor");
+            perror("Login falhou. Erro ao receber resposta do servidor");
         }
     }
     close(udp_fd);
 }
 
 void handle_logout_command(ClientState *client_state) {
-    if (!client_state->is_logged_in) {
-        printf("Não há sessão iniciada.\n");
-        return;
-    }
-
     struct sockaddr_in server_addr;
     int udp_fd = create_udp_socket_and_connect(client_state, &server_addr);
 
@@ -128,25 +123,24 @@ void handle_logout_command(ClientState *client_state) {
             client_state->is_logged_in = false;
             memset(client_state->current_uid, 0, sizeof(client_state->current_uid));
             memset(client_state->current_password, 0, sizeof(client_state->current_password));
+        } else if (strncmp(response_buffer, "RLO NOK", 7) == 0) {
+            printf("Logout falhou: não existe uma sessão iniciada.\n");
+        } else if (strncmp(response_buffer, "RLO UNR", 7) == 0) {
+            printf("Logout falhou: utilizador não registado.\n");
         } else {
             printf("Logout falhou. Resposta do servidor: %s", response_buffer);
         }
     } else {
         if (n == 0) {
-            printf("Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
+            printf("Logout falhou. Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
         } else {
-            perror("Erro ao receber resposta do servidor");
+            perror("Logout falhou. Erro ao receber resposta do servidor");
         }
     }
     close(udp_fd);
 }
 
 void handle_unregister_command(ClientState *client_state) {
-    if (!client_state->is_logged_in) {
-        printf("Não há sessão iniciada para anular o registo.\n");
-        return;
-    }
-
     struct sockaddr_in server_addr;
     int udp_fd = create_udp_socket_and_connect(client_state, &server_addr);
 
@@ -163,52 +157,26 @@ void handle_unregister_command(ClientState *client_state) {
             client_state->is_logged_in = false;
             memset(client_state->current_uid, 0, sizeof(client_state->current_uid));
             memset(client_state->current_password, 0, sizeof(client_state->current_password));
+        } else if (strncmp(response_buffer, "RUR NOK", 7) == 0) {
+            printf("Unregister falhou: não existe uma sessão iniciada.\n");
+        } else if (strncmp(response_buffer, "RUR UNR", 7) == 0) {
+            printf("Unregister falhou: utilizador não registado.\n");
         } else {
-            printf("Anulação de registo falhou. Resposta do servidor: %s", response_buffer);
+            printf("Unregister falhou. Resposta do servidor: %s", response_buffer);
         }
     } else {
         if (n == 0) {
-            printf("Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
+            printf("Unregister falhou. Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
         } else {
-            perror("Erro ao receber resposta do servidor");
+            perror("Unregister falhou. Erro ao receber resposta do servidor");
         }
     }
     close(udp_fd);
 }
 
 void handle_create_command(ClientState *client_state, const char *name, const char *event_fname, const char *date, const char *time, const char *num_attendees) {
-    if (!client_state->is_logged_in) {
-        printf("Apenas utilizadores com sessão iniciada podem criar eventos.\n");
-        return;
-    }
-
-    if (!is_valid_event_name(name)) {
-        printf("Erro: O nome do evento deve ter no máximo 10 caracteres alfanuméricos.\n");
-        return;
-    }
-
-    if (!is_valid_event_filename(event_fname)) {
-        printf("Erro: O nome do ficheiro de descrição deve ter no máximo 24 caracteres e conter apenas alfanuméricos, '-', '_' ou '.'.\n");
-        return;
-    }
-
     char full_datetime[17]; // dd-mm-yyyy hh:mm + '\0'
     snprintf(full_datetime, sizeof(full_datetime), "%s %s", date, time);
-    if (!is_valid_datetime_format(full_datetime)) {
-        printf("Erro: Data e hora inválida ou formato incorreto (dd-mm-yyyy hh:mm).\n");
-        return;
-    }
-
-    if (!is_valid_number_attendees(num_attendees)) {
-        printf("Erro: O número de lugares deve ser um valor numérico entre 10 e 999.\n");
-        return;
-    }
-
-    // Truncar o nome do evento para o máximo de 10 caracteres, conforme protocolo
-    char truncated_name[11]; // 10 caracteres + '\0'
-    strncpy(truncated_name, name, sizeof(truncated_name) - 1);
-    truncated_name[sizeof(truncated_name) - 1] = '\0'; // Garantir terminação nula
-
 
     FILE *file = fopen(event_fname, "rb");
     if (file == NULL) {
@@ -230,8 +198,8 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
     char request_header[512];
     // Ordem correta dos argumentos, correspondendo ao sscanf do servidor (num_attendees como int):
     // CRE <uid> <password> <truncated_name> <date> <time> <attendance_size_int> <fname> <fsize>
-    int header_len = snprintf(request_header, sizeof(request_header), "CRE %s %s %s %s %s %d %s %ld ",
-                              client_state->current_uid, client_state->current_password, truncated_name, date, time, atoi(num_attendees), event_fname, file_size);
+    int header_len = snprintf(request_header, sizeof(request_header), "CRE %s %s %s %s %s %s %s %ld ",
+                              client_state->current_uid, client_state->current_password, name, date, time, num_attendees, event_fname, file_size);
     
     if (write(tcp_fd, request_header, header_len) == -1) {
         perror("Erro ao enviar cabeçalho TCP");
@@ -258,14 +226,20 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
         char status[4], eid_str[4];
         if (sscanf(response_buffer, "RCE %s %s", status, eid_str) == 2 && strcmp(status, "OK") == 0) {
             printf("Evento criado com sucesso com o ID: %s\n", eid_str);
+        } else if (strncmp(response_buffer, "RCE NLG", 7) == 0) {
+            printf("Create falhou: não existe uma sessão iniciada.\n");
+        } else if (strncmp(response_buffer, "RCE ERR", 7) == 0) {
+            printf("Create falhou: sintaxe do comando ou parâmetros inválidos.\n");
+        } else if (strncmp(response_buffer, "RCE NOK", 7) == 0) {
+            printf("Create falhou: o servidor não conseguiu criar o evento (parâmetros inválidos).\n");
         } else {
-            printf("Não foi possível criar o evento. Resposta do servidor: %s", response_buffer);
+            printf("Create falhou. Resposta do servidor: %s", response_buffer);
         }
     }
     if (n == 0) {
-        printf("Servidor fechou a conexão inesperadamente.\n");
+        printf("Create falhou. Servidor fechou a conexão inesperadamente.\n");
     } else if (n < 0) {
-        perror("Erro de comunicação com o servidor");
+        perror("Create falhou. Erro de comunicação com o servidor");
     }
     close(tcp_fd); // Fechar o socket TCP
 }
@@ -292,28 +266,31 @@ void handle_list_command(ClientState *client_state) {
         response_buffer[total_bytes_read] = '\0';
 
         if (strncmp(response_buffer, "RLS NOK", 7) == 0) {
-            printf("Nenhum evento disponível de momento.\n");
+            printf("List falhou: nenhum evento criado.\n");
         } else if (strncmp(response_buffer, "RLS OK", 6) == 0) {
             printf("Eventos disponíveis:\n");
             printf("%-5s | %-12s | %s\n", "EID", "Nome", "Data");
             printf("------|--------------|----------------\n");
 
-            char *line = strtok(response_buffer + 7, "\n");
-            while (line != NULL) {
-                char eid[4], name[11], date[17]; // EID: 3 digitos + '\0'; Name: 10 chars + '\0'; Date: 16 chars + '\0'
-                int state; // O estado é um inteiro
-                if (sscanf(line, "%3s %10s %d %16[^\n]", eid, name, &state, date) == 4) {
-                    printf("%-5s | %-12s | %s\n", eid, name, date);
-                }
-                line = strtok(NULL, "\n");
+            char *ptr = response_buffer + 7; // Aponta para o início da lista de eventos
+            int offset;
+            char eid[4], name[11], date[11], time[6];
+            int state;
+
+            // Loop para ler cada evento da string
+            while (sscanf(ptr, " %3s %10s %d %10s %5s%n", eid, name, &state, date, time, &offset) == 5) {
+                char full_date[17];
+                snprintf(full_date, sizeof(full_date), "%s %s", date, time);
+                printf("%-5s | %-12s | %s\n", eid, name, full_date);
+                ptr += offset; // Avança o ponteiro para o início do próximo evento
             }
         } else {
-            printf("Resposta inesperada do servidor: %s", response_buffer);
+            printf("List falhou. Resposta inesperada do servidor: %s", response_buffer);
         } // else if (total_bytes_read <= 0)
     } else if (total_bytes_read == 0) {
-        printf("Servidor não enviou dados ou fechou a conexão.\n");
+        printf("List falhou. Servidor não enviou dados ou fechou a conexão.\n");
     } else { // total_bytes_read < 0
-        perror("Erro de comunicação com o servidor");
+        perror("List falhou. Erro de comunicação com o servidor");
     }
     close(tcp_fd);
 }
@@ -333,14 +310,14 @@ void handle_show_command(ClientState *client_state, const char *eid) {
     char response_buffer[4096];
     ssize_t bytes_read = read(tcp_fd, response_buffer, sizeof(response_buffer) - 1);
     if (bytes_read <= 0) {
-        printf("Servidor não respondeu ou fechou a conexão.\n");
+        printf("Show falhou. Servidor não respondeu ou fechou a conexão.\n");
         close(tcp_fd);
         return;
     }
     response_buffer[bytes_read] = '\0';
 
     if (strncmp(response_buffer, "RSE NOK", 7) == 0) {
-        printf("Evento não encontrado.\n");
+        printf("Show falhou: evento não encontrado.\n");
     } else if (strncmp(response_buffer, "RSE OK", 6) == 0) {
         char owner_uid[7], name[11], date[11], time[6], fname[25];
         int total_seats, reserved_seats;
@@ -351,7 +328,7 @@ void handle_show_command(ClientState *client_state, const char *eid) {
                                 owner_uid, name, date, time, &total_seats, &reserved_seats, fname, &fsize, &header_len);
 
         if (num_parsed < 8) {
-            printf("Erro: Resposta do servidor mal formatada.\n");
+            printf("Show falhou. Resposta do servidor mal formatada.\n");
         } else {
             printf("Detalhes do Evento %s:\n", eid);
             printf("  - Nome: %s\n", name);
@@ -383,18 +360,13 @@ void handle_show_command(ClientState *client_state, const char *eid) {
             }
         }
     } else {
-        printf("Resposta inesperada do servidor: %s", response_buffer);
+        printf("Show falhou. Resposta inesperada do servidor: %s", response_buffer);
     }
 
     close(tcp_fd);
 }
 
 void handle_myevents_command(ClientState *client_state) {
-    if (!client_state->is_logged_in) {
-        printf("Apenas utilizadores com sessão iniciada podem listar os seus eventos.\n");
-        return;
-    }
-
     struct sockaddr_in server_addr;
     int udp_fd = create_udp_socket_and_connect(client_state, &server_addr);
 
@@ -432,19 +404,19 @@ void handle_myevents_command(ClientState *client_state) {
                 printf("%-5s | %s\n", eid, state_str);
             }
         } else if (strncmp(response_buffer, "RME NOK", 7) == 0) {
-            printf("Não criou nenhum evento.\n");
+            printf("MyEvents falhou: não criou nenhum evento.\n");
         } else if (strncmp(response_buffer, "RME NLG", 7) == 0) {
-            printf("Erro: A sua sessão parece ter expirado. Por favor, faça login novamente.\n");
+            printf("MyEvents falhou: não existe uma sessão iniciada.\n");
         } else if (strncmp(response_buffer, "RME WRP", 7) == 0) {
-            printf("Erro: Password incorreta.\n");
+            printf("MyEvents falhou: password incorreta.\n");
         } else {
-            printf("Resposta inesperada do servidor: %s", response_buffer);
+            printf("MyEvents falhou. Resposta inesperada do servidor: %s", response_buffer);
         }
     } else {
         if (n == 0) {
-            printf("Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
+            printf("MyEvents falhou. Servidor não respondeu (conexão UDP pode ter sido perdida).\n");
         } else {
-            perror("Erro ao receber resposta do servidor");
+            perror("MyEvents falhou. Erro ao receber resposta do servidor");
         }
     }
 
@@ -452,11 +424,6 @@ void handle_myevents_command(ClientState *client_state) {
 }
 
 void handle_close_command(ClientState *client_state, const char *eid) {
-    if (!client_state->is_logged_in) {
-        printf("Apenas utilizadores com sessão iniciada podem fechar eventos.\n");
-        return;
-    }
-
     struct sockaddr_in server_addr;
     int tcp_fd = create_tcp_socket_and_connect(client_state, &server_addr);
 
@@ -471,41 +438,36 @@ void handle_close_command(ClientState *client_state, const char *eid) {
     char response_buffer[128];
     ssize_t n = read(tcp_fd, response_buffer, sizeof(response_buffer) - 1);
     if (n <= 0) {
-        printf("Servidor não respondeu ou fechou a conexão.\n");
+        printf("Close falhou. Servidor não respondeu ou fechou a conexão.\n");
     } else {
         response_buffer[n] = '\0';
         if (strncmp(response_buffer, "RCL OK", 6) == 0) {
             printf("Evento %s fechado com sucesso.\n", eid);
         } else if (strncmp(response_buffer, "RCL NOK", 7) == 0) {
-            printf("Erro ao fechar evento %s: Utilizador não existe ou password incorreta.\n", eid);
+            printf("Close falhou: utilizador não existe ou password incorreta.\n");
         } else if (strncmp(response_buffer, "RCL NLG", 7) == 0) {
-            printf("Erro ao fechar evento %s: Utilizador não está logado.\n", eid);
+            printf("Close falhou: utilizador não está logado.\n");
         } else if (strncmp(response_buffer, "RCL NOE", 7) == 0) {
-            printf("Erro ao fechar evento %s: Evento não existe.\n", eid);
+            printf("Close falhou: evento %s não existe.\n", eid);
         } else if (strncmp(response_buffer, "RCL EOW", 7) == 0) {
-            printf("Erro ao fechar evento %s: Não é o proprietário do evento.\n", eid);
+            printf("Close falhou: não é o proprietário do evento %s.\n", eid);
         } else if (strncmp(response_buffer, "RCL SLD", 7) == 0) {
-            printf("Erro ao fechar evento %s: Evento já esgotado.\n", eid);
+            printf("Close falhou: evento %s já esgotado.\n", eid);
         } else if (strncmp(response_buffer, "RCL PST", 7) == 0) {
-            printf("Erro ao fechar evento %s: Evento já passou.\n", eid);
+            printf("Close falhou: evento %s já passou.\n", eid);
         } else if (strncmp(response_buffer, "RCL CLO", 7) == 0) {
-            printf("Erro ao fechar evento %s: Evento já está fechado.\n", eid);
+            printf("Close falhou: evento %s já está fechado.\n", eid);
         } else {
-            printf("Resposta inesperada do servidor: %s", response_buffer);
+            printf("Close falhou. Resposta inesperada do servidor: %s", response_buffer);
         }
     }
     close(tcp_fd);
 }
 
 void handle_reserve_command(ClientState *client_state, const char *eid, const char *num_seats_str) {
-    if (!client_state->is_logged_in) {
-        printf("Apenas utilizadores com sessão iniciada podem fazer reservas.\n");
-        return;
-    }
-
     int num_seats = atoi(num_seats_str);
     if (num_seats <= 0) {
-        printf("Número de lugares inválido.\n");
+        printf("Reserve falhou: número de lugares inválido.\n");
         return;
     }
 
@@ -523,7 +485,7 @@ void handle_reserve_command(ClientState *client_state, const char *eid, const ch
     char response_buffer[128];
     ssize_t n = read(tcp_fd, response_buffer, sizeof(response_buffer) - 1);
     if (n <= 0) {
-        printf("Servidor não respondeu ou fechou a conexão.\n");
+        printf("Reserve falhou. Servidor não respondeu ou fechou a conexão.\n");
     } else {
         response_buffer[n] = '\0';
         if (strncmp(response_buffer, "RRI ACC", 7) == 0) {
@@ -531,33 +493,30 @@ void handle_reserve_command(ClientState *client_state, const char *eid, const ch
         } else if (strncmp(response_buffer, "RRI REJ", 7) == 0) {
             int available_seats;
             if (sscanf(response_buffer, "RRI REJ %d", &available_seats) == 1) {
-                printf("Reserva rejeitada. Apenas existem %d lugares disponíveis.\n", available_seats);
+                printf("Reserve falhou: apenas existem %d lugares disponíveis.\n", available_seats);
             } else {
-                printf("Reserva rejeitada por falta de lugares.\n");
+                printf("Reserve falhou: falta de lugares.\n");
             }
         } else if (strncmp(response_buffer, "RRI CLS", 7) == 0) {
-            printf("Reserva falhou: o evento %s já se encontra fechado.\n", eid);
+            printf("Reserve falhou: o evento %s já se encontra fechado.\n", eid);
         } else if (strncmp(response_buffer, "RRI SLD", 7) == 0) {
-            printf("Reserva falhou: o evento %s está esgotado.\n", eid);
+            printf("Reserve falhou: o evento %s está esgotado.\n", eid);
         } else if (strncmp(response_buffer, "RRI PST", 7) == 0) {
-            printf("Reserva falhou: a data do evento %s já passou.\n", eid);
+            printf("Reserve falhou: a data do evento %s já passou.\n", eid);
         } else if (strncmp(response_buffer, "RRI NOK", 7) == 0) {
-            printf("Reserva falhou: o evento %s não existe ou não está ativo.\n", eid);
+            printf("Reserve falhou: o evento %s não existe ou não está ativo.\n", eid);
         } else if (strncmp(response_buffer, "RRI WRP", 7) == 0) {
-            printf("Reserva falhou: password incorreta.\n");
+            printf("Reserve falhou: password incorreta.\n");
+        } else if (strncmp(response_buffer, "RRI NLG", 7) == 0) {
+            printf("Reserve falhou: não existe uma sessão iniciada.\n");
         } else {
-            printf("Reserva falhou. Resposta do servidor: %s", response_buffer);
+            printf("Reserve falhou. Resposta do servidor: %s", response_buffer);
         }
     }
     close(tcp_fd);
 }
 
 void handle_myreservations_command(ClientState *client_state) {
-    if (!client_state->is_logged_in) {
-        printf("Apenas utilizadores com sessão iniciada podem listar as suas reservas.\n");
-        return;
-    }
-
     struct sockaddr_in server_addr;
     int udp_fd = create_udp_socket_and_connect(client_state, &server_addr);
 
@@ -589,31 +548,22 @@ void handle_myreservations_command(ClientState *client_state) {
                 printf("%-5s | %s %-9s | %s\n", eid, date, time, value);
             }
         } else if (strncmp(response_buffer, "RMR NOK", 7) == 0) {
-            printf("Não efetuou nenhuma reserva.\n");
+            printf("MyReservations falhou: não efetuou nenhuma reserva.\n");
         } else if (strncmp(response_buffer, "RMR NLG", 7) == 0) {
-            printf("Erro: A sua sessão parece ter expirado. Por favor, faça login novamente.\n");
+            printf("MyReservations falhou: não existe uma sessão iniciada.\n");
         } else if (strncmp(response_buffer, "RMR WRP", 7) == 0) {
-            printf("Erro: Password incorreta.\n");
+            printf("MyReservations falhou: password incorreta.\n");
         } else {
-            printf("Resposta inesperada do servidor: %s", response_buffer);
+            printf("MyReservations falhou. Resposta inesperada do servidor: %s", response_buffer);
         }
     } else {
-        printf("Não foi possível obter resposta do servidor.\n");
+        printf("MyReservations falhou. Não foi possível obter resposta do servidor.\n");
     }
 
     close(udp_fd);
 }
 
 void handle_change_password_command(ClientState *client_state, const char *old_password, const char *new_password) {
-    if (!client_state->is_logged_in) {
-        printf("Apenas utilizadores com sessão iniciada podem alterar a password.\n");
-        return;
-    }
-
-    if (!is_valid_password(old_password) || !is_valid_password(new_password)) {
-        printf("Erro: As passwords devem ter exatamente 8 caracteres alfanuméricos.\n");
-        return;
-    }
     struct sockaddr_in server_addr;
     int tcp_fd = create_tcp_socket_and_connect(client_state, &server_addr);
 
@@ -628,7 +578,7 @@ void handle_change_password_command(ClientState *client_state, const char *old_p
     char response_buffer[128];
     ssize_t n = read(tcp_fd, response_buffer, sizeof(response_buffer) - 1);
     if (n <= 0) {
-        printf("Servidor não respondeu ou fechou a conexão.\n");
+        printf("ChangePass falhou. Servidor não respondeu ou fechou a conexão.\n");
     } else {
         response_buffer[n] = '\0';
         if (strncmp(response_buffer, "RCP OK", 6) == 0) {
@@ -637,13 +587,15 @@ void handle_change_password_command(ClientState *client_state, const char *old_p
             strncpy(client_state->current_password, new_password, sizeof(client_state->current_password) - 1);
             client_state->current_password[sizeof(client_state->current_password) - 1] = '\0';
         } else if (strncmp(response_buffer, "RCP NLG", 7) == 0) {
-            printf("Erro: Utilizador não está logado.\n");
+            printf("ChangePass falhou: utilizador não está logado.\n");
         } else if (strncmp(response_buffer, "RCP NOK", 7) == 0) {
-            printf("Erro: Password antiga incorreta.\n");
+            printf("ChangePass falhou: password antiga incorreta.\n");
         } else if (strncmp(response_buffer, "RCP NID", 7) == 0) {
-            printf("Erro: Utilizador não existe.\n");
+            printf("ChangePass falhou: utilizador não existe.\n");
+        } else if (strncmp(response_buffer, "RCP ERR", 7) == 0) {
+            printf("ChangePass falhou: formato de password inválido.\n");
         } else {
-            printf("Erro: Resposta inesperada do servidor: %s", response_buffer);
+            printf("ChangePass falhou. Resposta inesperada do servidor: %s", response_buffer);
         }
     }
     close(tcp_fd);
