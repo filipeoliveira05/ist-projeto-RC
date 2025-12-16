@@ -2,12 +2,12 @@
 #define DATA_MANAGER_H
 
 #include "structures.h"
-#include <stddef.h> // Para o tipo size_t
+#include <stddef.h>
 
 // Função de utilidade para tratamento de erros
 void handle_error(const char *msg);
 
-// Funções de gestão de utilizadores baseadas em ficheiros
+// Funções de gestão de users baseadas em ficheiros
 bool user_exists(const char *uid);
 bool user_password_file_exists(const char *uid);
 bool check_user_password(const char *uid, const char *password);

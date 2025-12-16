@@ -1,7 +1,7 @@
 #include "utils.h"
-#include <string.h> // Para strlen
-#include <ctype.h>  // Para isalnum
-#include <stdlib.h> // Para atoi()
+#include <string.h>
+#include <ctype.h>
+#include <stdlib.h>
 #include <stdio.h>
 
 /**
@@ -75,25 +75,22 @@ bool is_valid_event_filename(const char *filename) {
 bool is_valid_datetime_format(const char *datetime_str) {
     int day, month, year, hour, minute;
 
-    // 1. Verificar o formato geral e o número de itens lidos
     if (sscanf(datetime_str, "%d-%d-%d %d:%d", &day, &month, &year, &hour, &minute) != 5) {
         return false;
     }
 
-    // 2. Validar os valores lógicos
     if (year < 1900 || year > 9999) return false;
     if (month < 1 || month > 12) return false;
     if (hour < 0 || hour > 23) return false;
     if (minute < 0 || minute > 59) return false;
 
-    // Validar o dia com base no mês e se o ano é bissexto
     int days_in_month;
-    if (month == 2) { // Fevereiro
+    if (month == 2) {
         bool is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
         days_in_month = is_leap ? 29 : 28;
-    } else if (month == 4 || month == 6 || month == 9 || month == 11) { // Meses com 30 dias
+    } else if (month == 4 || month == 6 || month == 9 || month == 11) {
         days_in_month = 30;
-    } else { // Meses com 31 dias
+    } else {
         days_in_month = 31;
     }
 
@@ -101,13 +98,9 @@ bool is_valid_datetime_format(const char *datetime_str) {
         return false;
     }
 
-    // 3. Verificar se a string original tem o formato exato para evitar inputs como "1-1-2025 1:1"
     char check_buffer[20];
     snprintf(check_buffer, sizeof(check_buffer), "%02d-%02d-%04d %02d:%02d", day, month, year, hour, minute);
     if (strcmp(datetime_str, check_buffer) != 0) {
-        // Esta verificação é um pouco rigorosa demais se o input for "1-1-2025 1:1", mas o enunciado implica formato fixo.
-        // A validação de formato do sscanf já é um bom começo.
-        // A validação de formato original pode ser mantida se for preferível.
         if (strlen(datetime_str) != 16 || datetime_str[2] != '-' || datetime_str[5] != '-' || datetime_str[10] != ' ' || datetime_str[13] != ':') {
             return false;
         }
@@ -120,7 +113,6 @@ bool is_valid_datetime_format(const char *datetime_str) {
  * Valida se o número de lugares é uma string que representa um inteiro entre 10 e 999.
  */
 bool is_valid_number_attendees(const char *num_str) {
-    // Verifica se a string contém apenas dígitos
     for (int i = 0; num_str[i] != '\0'; i++) {
         if (!isdigit((unsigned char)num_str[i])) {
             return false;

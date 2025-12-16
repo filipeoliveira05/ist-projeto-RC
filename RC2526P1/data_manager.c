@@ -13,7 +13,7 @@ void handle_error(const char *msg) {
 }
 
 /**
- * Verifica se um utilizador existe, procurando pela sua diretoria.
+ * Verifica se um utilizador existe, procurando pela sua diretoria
  */
 bool user_exists(const char *uid) {
     char path[256];
@@ -23,7 +23,7 @@ bool user_exists(const char *uid) {
 }
 
 /**
- * Verifica se o ficheiro de password de um utilizador existe.
+ * Verifica se o ficheiro de password de um utilizador existe
  */
 bool user_password_file_exists(const char *uid) {
     char path[256];
@@ -33,7 +33,7 @@ bool user_password_file_exists(const char *uid) {
 }
 
 /**
- * Verifica se a password fornecida corresponde à guardada no ficheiro do utilizador.
+ * Verifica se a password fornecida corresponde à guardada no ficheiro do utilizador
  */
 bool check_user_password(const char *uid, const char *password) {
     char path[256];
@@ -44,7 +44,6 @@ bool check_user_password(const char *uid, const char *password) {
     char stored_password[10]; // 8 chars + \n + \0
     bool result = false;
     if (fgets(stored_password, sizeof(stored_password), f) != NULL) {
-        // Remove o \n do final, se existir
         stored_password[strcspn(stored_password, "\n")] = 0;
         if (strcmp(stored_password, password) == 0) {
             result = true;
@@ -55,7 +54,7 @@ bool check_user_password(const char *uid, const char *password) {
 }
 
 /**
- * Verifica se um utilizador está logado, procurando pelo ficheiro _login.txt.
+ * Verifica se um utilizador está logado, procurando pelo ficheiro _login.txt
  */
 bool is_user_logged_in(const char *uid) {
     char path[256];
@@ -65,22 +64,22 @@ bool is_user_logged_in(const char *uid) {
 }
 
 /**
- * Cria a estrutura de ficheiros para um novo utilizador.
+ * Cria a estrutura de ficheiros para um novo utilizador
  */
 void create_user_files(const char *uid, const char *password) {
     char path[256];
 
-    // Criar diretoria USERS/<uid>
+    // diretoria USERS/<uid>
     snprintf(path, sizeof(path), "USERS/%s", uid);
     mkdir(path, 0700);
 
-    // Criar subdiretorias CREATED e RESERVED
+    // subdiretorias CREATED e RESERVED
     snprintf(path, sizeof(path), "USERS/%s/CREATED", uid);
     mkdir(path, 0700);
     snprintf(path, sizeof(path), "USERS/%s/RESERVED", uid);
     mkdir(path, 0700);
 
-    // Criar ficheiro USERS/<uid>/<uid>_pass.txt
+    // ficheiro USERS/<uid>/<uid>_pass.txt
     snprintf(path, sizeof(path), "USERS/%s/%s_pass.txt", uid, uid);
     FILE *f = fopen(path, "w");
     if (f != NULL) {
@@ -90,20 +89,19 @@ void create_user_files(const char *uid, const char *password) {
 }
 
 /**
- * Cria o ficheiro de sessão para um utilizador.
+ * Cria o ficheiro de sessão para um utilizador
  */
 void create_login_file(const char *uid) {
     char path[256];
     snprintf(path, sizeof(path), "USERS/%s/%s_login.txt", uid, uid);
     FILE *f = fopen(path, "w");
     if (f != NULL) {
-        // O conteúdo não importa, apenas a existência do ficheiro.
         fclose(f);
     }
 }
 
 /**
- * Remove o ficheiro de sessão de um utilizador (logout).
+ * Remove o ficheiro de sessão de um utilizador
  */
 void remove_login_file(const char *uid) {
     char path[256];
@@ -112,7 +110,7 @@ void remove_login_file(const char *uid) {
 }
 
 /**
- * Atualiza a password de um utilizador no seu ficheiro _pass.txt.
+ * Atualiza a password de um utilizador no seu ficheiro _pass.txt
  */
 bool update_user_password(const char *uid, const char *new_password) {
     char path[256];
@@ -126,18 +124,17 @@ bool update_user_password(const char *uid, const char *new_password) {
 }
 
 /**
- * Remove os ficheiros de um utilizador (unregister).
- * De acordo com o guia, apenas _pass.txt e _login.txt são removidos.
+ * Remove os ficheiros de um utilizador
  */
 void remove_user_files(const char *uid) {
     char path[256];
     snprintf(path, sizeof(path), "USERS/%s/%s_pass.txt", uid, uid);
     unlink(path);
-    remove_login_file(uid); // Reutiliza a função de logout
+    remove_login_file(uid);
 }
 
 /**
- * Obtém a data e hora atuais e formata-as para serem usadas em nomes de ficheiros.
+ * Obtém a data e hora atuais e formata-as para serem usadas em nomes de ficheiros
  * date_str: YYYYMMDD
  * time_str: HHMMSS
  */
@@ -146,7 +143,7 @@ void get_datetime_for_filename(char *date_str, char *time_str, size_t size) {
     struct tm *ts;
 
     time(&now);
-    ts = localtime(&now); // Usar localtime para a hora local
+    ts = localtime(&now);
 
     // Formato YYYY-MM-DD
     strftime(date_str, size, "%Y%m%d", ts);
@@ -155,8 +152,8 @@ void get_datetime_for_filename(char *date_str, char *time_str, size_t size) {
 }
 
 /**
- * Cria o ficheiro END_<eid>.txt para marcar um evento como fechado.
- * O ficheiro contém a data e hora de encerramento.
+ * Cria o ficheiro END_<eid>.txt para marcar um evento como fechado
+ * O ficheiro contém a data e hora de encerramento
  */
 void create_end_file(const char *eid_str) {
     char path[256];
@@ -176,24 +173,24 @@ void create_end_file(const char *eid_str) {
 }
 
 /**
- * Calcula o estado atual de um evento com base nos ficheiros e na data.
+ * Calcula o estado atual de um evento com base nos ficheiros e na data
  */
 EventState get_event_state(const char *eid_str) {
     char path[256];
 
-    // 1. Verificar se o evento está fechado (END_.txt existe)
+    // verificar se o evento está fechado (END_.txt existe)
     snprintf(path, sizeof(path), "EVENTS/%s/END_%s.txt", eid_str, eid_str);
     struct stat st;
     if (stat(path, &st) == 0) {
         return CLOSED;
     }
 
-    // 2. Ler os detalhes do evento para verificar data e lotação
+    // ler os detalhes do evento para verificar data e lotação
     char start_path[256];
     snprintf(start_path, sizeof(start_path), "EVENTS/%s/START_%s.txt", eid_str, eid_str);
     FILE *start_file = fopen(start_path, "r");
     if (!start_file) {
-        return -1; // Estado inválido/erro se o evento não tiver START file
+        return -1;
     }
 
     char date_str[11], time_str[6];
@@ -201,29 +198,28 @@ EventState get_event_state(const char *eid_str) {
     fscanf(start_file, "%*s %*s %*s %d %10s %5s", &total_seats, date_str, time_str);
     fclose(start_file);
 
-    // 3. Verificar se o evento já passou
+    // verificar se o evento já passou
     struct tm event_tm = {0};
     sscanf(date_str, "%d-%d-%d", &event_tm.tm_mday, &event_tm.tm_mon, &event_tm.tm_year);
     sscanf(time_str, "%d:%d", &event_tm.tm_hour, &event_tm.tm_min);
-    event_tm.tm_mon -= 1;  // tm_mon é 0-11
-    event_tm.tm_year -= 1900; // tm_year é anos desde 1900
-    event_tm.tm_isdst = -1; // Deixa mktime decidir sobre o horário de verão
+    event_tm.tm_mon -= 1;
+    event_tm.tm_year -= 1900;
+    event_tm.tm_isdst = -1;
 
     time_t event_time = mktime(&event_tm);
     time_t now = time(NULL);
 
     if (difftime(now, event_time) > 0) {
-        // Conforme o guia, se o evento já passou, o servidor deve criar o ficheiro END_
         create_end_file(eid_str);
         return PAST;
     }
 
-    // 4. Verificar se o evento está esgotado
+    // verificar se o evento está esgotado
     char res_path[256];
     snprintf(res_path, sizeof(res_path), "EVENTS/%s/RES_%s.txt", eid_str, eid_str);
     FILE *res_file = fopen(res_path, "r");
     if (!res_file) {
-        return -1; // Erro
+        return -1;
     }
     int reserved_seats = 0;
     fscanf(res_file, "%d", &reserved_seats);
@@ -233,6 +229,6 @@ EventState get_event_state(const char *eid_str) {
         return SOLD_OUT;
     }
 
-    // 5. Se nada acima se aplicar, o evento está ativo
+    // se nada acima se aplicar, o evento está ativo
     return ACTIVE;
 }
