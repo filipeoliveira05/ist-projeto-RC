@@ -114,22 +114,23 @@ devendo as reservas nos eventos 003, 004 e 007 ser rejeitadas.
 1.5. Testes de concorrência
 Os testes propostos nesta secção estão orientados para avaliar as capacidades de concorrência do servidor. Eles baseiam-se em dois conjuntos
 de quatro scripts cada. O primeiro conjunto, constituído pelos scripts numerados de 21 a 24, idênticos, serve para testar a concorrência do
-servidor com quatro aplicações user em acesso simultâneo para criação de 10 eventos cada um.
-O script_25 serve de base à constituição no servidor de uma base de dados para testar concorrência na descarga de ficheiros com o comando
+servidor em upload com quatro aplicações user em acesso simultâneo para criação de 10 eventos cada um.
+O script_25 constitui no servidor uma base de dados para testar concorrência na descarga de ficheiros com o comando
 show. A concorrência será testada pelo segundo conjunto de scripts numerados de 26 a 29.
 
-Para testar a concorrência em criação de eventos, deve garantir-se em primeiro lugar que a base de dados do ES está vazia, e que tem quatro
+Para testar a concorrência em criação de eventos (upload), deve garantir-se em primeiro lugar que a base de dados do ES está vazia, e que tem quatro
 utilizadores com os seguintes pares UID/password registados: 111111/aaaaaaaa, 222222/bbbbbbbb, 333333/cccccccc e 444444/dddddddd.
-De seguida abrem-se quatro terminais e neles executam-se os comandos:
+De seguida abrem-se quatro terminais e neles se editam (sem executar) os comandos:
 
 echo “TargetIP TargetPort 21” | nc tejo.ist.utl.pt 59000 > report1.html
 echo “TargetIP TargetPort 22” | nc tejo.ist.utl.pt 59000 > report2.html
 echo “TargetIP TargetPort 23” | nc tejo.ist.utl.pt 59000 > report3.html
 echo “TargetIP TargetPort 24” | nc tejo.ist.utl.pt 59000 > report4.html
 
-As aplicações user no ‘tejo’ “percebem” pela numeração dos scripts envolvidos que devem arrancar em simultâneo. Portanto, só ao
-quarto pedido de execução é que todas arrancam. Recomenda-se contudo rapidez entre as primeira e quarta execuções por forma a não
-ocupar recursos por tempo excessivo.
+Depois de editados os quatro comandos, o utilizador dá em cada terminal a ordem de execução de cada comando, por forma a que
+entre a primeira ordem e a última não decorram mais de 30 segundos. Caso este tempo seja ultrapassado, o teste terá de ser repetido.
+As aplicações user activadas no ‘tejo’ “percebem” pela numeração dos scripts envolvidos que devem arrancar em simultâneo. Portanto, só
+ao quarto pedido de execução é que todas arrancam.
 
 Os resultados dos quatro testes encontram-se nos relatórios produzidos os quais devem ser analisados pois contêm a informação relevante
 para aferir das capacidades de concorrência do servidor. Estes quatro testes simultâneos podem servir para aferir a capacidade do
@@ -140,7 +141,7 @@ UID/password==111111/aaaaaaaa registado.
 
 A execução do script_25 serve para povoar a base de dados com os mesmos 7 eventos do script 09.
 
-Após a execução deste script, podem ser executados em simultâneo os restantes quatro numerados de 26 a 29 tal como foram executados
+Após a execução do script 25, podem ser executados em simultâneo os restantes quatro numerados de 26 a 29 tal como foram executados
 os scripts numerados de 21 a 24, mutatis mutandis. Os scripts numerados de 26 a 29 são parecidos entre si embora com diferentes
 ordenações. Após a descarga de cada ficheiro, o mesmo é comparado com o original (comandos RCOMP) para aferir do bom funcionamento
 das operações de upload e download.
