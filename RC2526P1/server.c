@@ -195,6 +195,7 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < MAX_TCP_CLIENTS; i++) {
             if (client_tcp_fds[i] > 0 && FD_ISSET(client_tcp_fds[i], &read_fds)) {
                 char tcp_buffer[1024]; // Buffer para dados TCP
+                memset(tcp_buffer, 0, sizeof(tcp_buffer)); // Limpar o buffer antes de ler
                 ssize_t bytes_read = read(client_tcp_fds[i], tcp_buffer, sizeof(tcp_buffer) - 1);
 
                 if (bytes_read <= 0) { // Conexão fechada pelo cliente ou erro
@@ -208,13 +209,22 @@ int main(int argc, char *argv[]) {
                     close(client_tcp_fds[i]); // Fecha o socket
                     client_tcp_fds[i] = 0; // Marca o slot como livre
                 } else {
-                    tcp_buffer[bytes_read] = '\0'; // Termina a string lida com null
                     if (verbose) {
                         // Imprime apenas o início do buffer para não poluir o log com dados de ficheiro
                         printf("VERBOSE SERVER.C: Received data from TCP client (fd: %d), processing...\n", client_tcp_fds[i]);
                     }
 
-                    process_tcp_request(client_tcp_fds[i], tcp_buffer, bytes_read, &server_data, verbose);
+                    char response_buffer[8192]; // Buffer para a resposta
+                    memset(response_buffer, 0, sizeof(response_buffer));
+                    process_tcp_request(client_tcp_fds[i], tcp_buffer, bytes_read, &server_data, verbose, response_buffer, sizeof(response_buffer));
+
+                    if (strlen(response_buffer) > 0) {
+                        write(client_tcp_fds[i], response_buffer, strlen(response_buffer));
+                    }
+
+                    // Usar shutdown para garantir que todos os dados são enviados antes de fechar.
+                    // SHUT_WR sinaliza que não vamos escrever mais nada.
+                    shutdown(client_tcp_fds[i], SHUT_WR);
                     close(client_tcp_fds[i]);
                     client_tcp_fds[i] = 0; // Marca o slot como livre
                 }

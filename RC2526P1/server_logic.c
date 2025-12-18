@@ -36,10 +36,6 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
                 snprintf(response_buffer, sizeof(response_buffer), "RLI ERR\n");
                 if (verbose) printf("Verbose: LIN failed. Reason: Invalid UID format for '%s'.\n", uid_str);
             }
-            if (!is_valid_uid(uid_str)) { // Validação do UID
-                snprintf(response_buffer, sizeof(response_buffer), "RLI ERR\n");
-                if (verbose) printf("Verbose: LIN failed. Reason: Invalid UID format for '%s'.\n", uid_str);
-            }
             else if (!is_valid_password(password_str)) { // Validação da password
                 snprintf(response_buffer, sizeof(response_buffer), "RLI ERR\n");
                 if (verbose) printf("Verbose: LIN failed for %s. Reason: Invalid password format.\n", uid_str);
@@ -241,22 +237,26 @@ void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buff
     }
 }
 
-void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, ServerState *server_data, bool verbose) {
+void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, ServerState *server_data, bool verbose, char *response_buffer, int response_size) {
     // ... cole aqui toda a lógica de processamento TCP ...
     // (if/else para CRE, LST, etc.)
     // ... e a lógica de write() da resposta.
     // NOTA: Esta função não deve fechar o socket, isso é responsabilidade do loop principal em server.c
 
-    char response_msg[128];
 
     // Log do tipo de pedido TCP, conforme o enunciado, se o modo verbose estiver ativo.
     if (verbose) {
         char command_type[4];
         // Tenta ler os 3 primeiros caracteres como o tipo de comando.
         if (sscanf(tcp_buffer, "%3s", command_type) == 1) {
-            // Remove a quebra de linha do buffer para um log mais limpo
-            tcp_buffer[strcspn(tcp_buffer, "\n")] = 0;
-            printf("VERBOSE: Received TCP request from fd %d -> [%s] \"%s\"\n", client_fd, command_type, tcp_buffer);
+            // Criar uma cópia do buffer para o log para não modificar o original
+            char log_buffer[256];
+            strncpy(log_buffer, tcp_buffer, sizeof(log_buffer) - 1);
+            log_buffer[sizeof(log_buffer) - 1] = '\0';
+
+            // Remover a quebra de linha da cópia para um log mais limpo
+            log_buffer[strcspn(log_buffer, "\n")] = '\0';
+            printf("VERBOSE: Received TCP request from fd %d -> [%s] \"%s\"\n", client_fd, command_type, log_buffer);
         }
     }
 
@@ -269,18 +269,22 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         
         // 1. Validar primeiro as credenciais. Se falhar, é porque o utilizador não está logado.
         if (sscanf(tcp_buffer, "CRE %6s %8s", uid, password) != 2 || !is_user_logged_in(uid)) { // A verificação de login aqui é redundante se o cliente não envia UID, mas mantemos por segurança
-            snprintf(response_msg, sizeof(response_msg), "RCE NLG\n");
+            snprintf(response_buffer, response_size, "RCE NLG\n");
             if (verbose) printf("Verbose: CRE failed. Reason: User not logged in.\n");
         } else {
+            // Copiar a parte do cabeçalho para um buffer temporário para evitar corromper tcp_buffer com sscanf
+            char header_buffer[512];
+            strncpy(header_buffer, tcp_buffer, sizeof(header_buffer) - 1);
+            header_buffer[sizeof(header_buffer) - 1] = '\0';
             // 2. Se as credenciais são válidas, analisar o resto do cabeçalho
-            int num_parsed = sscanf(tcp_buffer, "CRE %*s %*s %10s %10s %5s %4s %24s %ld %n",
+            int num_parsed = sscanf(header_buffer, "CRE %*s %*s %10s %10s %5s %4s %24s %ld %n",
                                     name, date, time, num_attendees_str, fname, &fsize, &header_len);
 
-            if (num_parsed < 6) { // Agora esperamos 6 argumentos após as credenciais
-                snprintf(response_msg, sizeof(response_msg), "RCE ERR\n");
+            if (num_parsed < 6) { 
+                snprintf(response_buffer, response_size, "RCE ERR\n");
                 if (verbose) printf("Verbose: CRE failed. Reason: Invalid request syntax (missing arguments).\n");
             } else if (!check_user_password(uid, password)) { // Validação da password
-            snprintf(response_msg, sizeof(response_msg), "RCE ERR\n");
+            snprintf(response_buffer, response_size, "RCE ERR\n");
                 if (verbose) printf("Verbose: CRE failed for %s. Reason: Incorrect password.\n", uid);
             } else {
                 char full_date[17];
@@ -288,7 +292,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
 
                 // Validações dos parâmetros movidas do cliente para o servidor
                 if (!is_valid_event_name(name) || !is_valid_event_filename(fname) || !is_valid_datetime_format(full_date) || !is_valid_number_attendees(num_attendees_str)) {
-                    snprintf(response_msg, sizeof(response_msg), "RCE NOK\n");
+                    snprintf(response_buffer, response_size, "RCE NOK\n");
                     if (verbose) printf("Verbose: CRE failed. Reason: Invalid parameter values (name, filename, date, or attendees).\n");
                 } else {
                     int current_eid = server_data->next_eid;
@@ -309,16 +313,17 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                     FILE *file = fopen(event_filepath, "wb");
                     if (file == NULL) {
                         perror("Erro ao criar ficheiro do evento no servidor");
-                        snprintf(response_msg, sizeof(response_msg), "RCE NOK\n");
+                        snprintf(response_buffer, response_size, "RCE NOK\n");
                         if (verbose) printf("Verbose: CRE failed for %s. Reason: Server failed to create event file.\n", uid);
                     } else {
                         // Usar o header_len obtido com %n para encontrar o início dos dados do ficheiro.
-                        if (header_len > 0 && header_len < bytes_read) {
+                        if (header_len > 0) {
                             long initial_data_len = bytes_read - header_len;
                             fwrite(tcp_buffer + header_len, 1, initial_data_len, file);
-                            long remaining_bytes = fsize - initial_data_len;
+                            long remaining_bytes = fsize - initial_data_len; // Corrigir o cálculo dos bytes restantes
                             while (remaining_bytes > 0) {
-                                bytes_read = read(client_fd, tcp_buffer, sizeof(tcp_buffer));
+                                memset(tcp_buffer, 0, 1024); // Limpar o buffer antes de ler, usando o tamanho real
+                                bytes_read = read(client_fd, tcp_buffer, 1024);
                                 if (bytes_read <= 0) break;
                                 fwrite(tcp_buffer, 1, bytes_read, file);
                                 remaining_bytes -= bytes_read;
@@ -355,7 +360,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                         if (created_file) fclose(created_file); // Ficheiro vazio
 
                         // 5. Preparar resposta e incrementar EID
-                        snprintf(response_msg, sizeof(response_msg), "RCE OK %03d\n", current_eid);
+                        snprintf(response_buffer, response_size, "RCE OK %03d\n", current_eid);
                         if (verbose) printf("Verbose: Event %03d created successfully by user %s.\n", current_eid, uid);
                         server_data->next_eid++;
 
@@ -374,10 +379,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                 }
             }
         }
-        // Enviar resposta para CRE
-        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
-        if (bytes_sent == -1) perror("Erro ao escrever para o socket TCP do cliente (CRE)");
-        else if (verbose) printf("VERBOSE CRE: TCP response sent to fd %d: %s", client_fd, response_msg);
+        if (verbose) printf("VERBOSE CRE: TCP response prepared for fd %d: %s", client_fd, response_buffer);
         return; // Comando CRE processado, retornar
     } else if (strncmp(tcp_buffer, "LST", 3) == 0) {
         // --- Implementar list (LST/RLS) ---
@@ -388,8 +390,8 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         n = scandir("EVENTS", &namelist, NULL, alphasort);
         if (n < 0) {
             perror("scandir");
-            snprintf(response_msg, sizeof(response_msg), "RLS NOK\n");
-            write(client_fd, response_msg, strlen(response_msg));
+            snprintf(response_buffer, response_size, "RLS NOK\n");
+            if (verbose) printf("VERBOSE LST: TCP response prepared for fd %d: RLS NOK\n", client_fd);
             return;
         }
 
@@ -413,7 +415,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                     char owner_uid[7], event_name[11], desc_fname[25], event_date_str[11], event_time_str[6];
                     int total_seats;
                     if (fscanf(start_file, "%6s %10s %24s %d %10s %5s", owner_uid, event_name, desc_fname, &total_seats, event_date_str, event_time_str) == 6) {
-                        char current_eid_str[4];
+                        char current_eid_str[12];
                         snprintf(current_eid_str, sizeof(current_eid_str), "%03d", eid);
                         char full_event_date[17];
                         snprintf(full_event_date, sizeof(full_event_date), "%s %s", event_date_str, event_time_str);
@@ -430,13 +432,12 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         }
 
         if (!found_any_event) {
-            snprintf(response_msg, sizeof(response_msg), "RLS NOK\n");
-            write(client_fd, response_msg, strlen(response_msg));
+            snprintf(response_buffer, response_size, "RLS NOK\n");
             if (verbose) printf("Verbose: LST failed. Reason: No events found to list.\n");
             if (verbose) printf("VERBOSE LST: TCP response sent to fd %d: RLS NOK\n", client_fd);
         } else {
-            strcat(full_response, "\n"); // Adicionar o \n final
-            write(client_fd, full_response, strlen(full_response));
+            strcat(full_response, "\n");
+            strncpy(response_buffer, full_response, response_size - 1);
             if (verbose) {
                 full_response[strcspn(full_response, "\n")] = 0; // Remover o \n para o log
                 printf("VERBOSE LST: TCP response sent to fd %d: %s\n", client_fd, full_response);
@@ -449,14 +450,14 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
         char uid[7], password[9], eid_str[4];
 
         if (sscanf(tcp_buffer, "CLS %6s %8s", uid, password) != 2 || !is_user_logged_in(uid)) {
-            snprintf(response_msg, sizeof(response_msg), "RCL NLG\n");
+            snprintf(response_buffer, response_size, "RCL NLG\n");
             if (verbose) printf("Verbose: CLS failed. Reason: User not logged.\n");
         } else {
             if (sscanf(tcp_buffer, "CLS %*s %*s %3s", eid_str) != 1) {
-                snprintf(response_msg, sizeof(response_msg), "RCL ERR\n");
+                snprintf(response_buffer, response_size, "RCL ERR\n");
                 if (verbose) printf("Verbose: CLS failed. Reason: Invalid request syntax (missing EID).\n");
             } else if (!check_user_password(uid, password)) {
-                snprintf(response_msg, sizeof(response_msg), "RCL NOK\n");
+                snprintf(response_buffer, response_size, "RCL NOK\n");
                 if (verbose) printf("Verbose: CLS failed for %s. Reason: Incorrect password.\n", uid);
             } else {
                 char event_dir_path[32];
@@ -464,7 +465,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
 
                 struct stat st;
                 if (stat(event_dir_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
-                    snprintf(response_msg, sizeof(response_msg), "RCL NOE\n");
+                    snprintf(response_buffer, response_size, "RCL NOE\n");
                     if (verbose) printf("Verbose: CLS failed for EID %s. Reason: Event does not exist.\n", eid_str);
                 } else {
                     // Verificar se o utilizador é o proprietário do evento
@@ -472,19 +473,19 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                     snprintf(start_path, sizeof(start_path), "%s/START_%s.txt", event_dir_path, eid_str);
                     FILE *start_file = fopen(start_path, "r");
                     if (!start_file) {
-                        snprintf(response_msg, sizeof(response_msg), "RCL NOE\n"); // START file missing, treat as non-existent
+                        snprintf(response_buffer, response_size, "RCL NOE\n"); // START file missing, treat as non-existent
                         if (verbose) printf("Verbose: CLS failed for EID %s. Reason: Event doesn't exist or data is corrupted (missing START file).\n", eid_str);
                     } else {
                         char owner_uid[7];
                         // Ler apenas o UID do proprietário do ficheiro START
                         if (fscanf(start_file, "%6s", owner_uid) != 1) {
-                            snprintf(response_msg, sizeof(response_msg), "RCL NOE\n"); // Ficheiro START mal formatado
+                            snprintf(response_buffer, response_size, "RCL NOE\n"); // Ficheiro START mal formatado
                             if (verbose) printf("Verbose: CLS failed for EID %s. Reason: Event doesn't exist or data is corrupted (malformed START file).\n", eid_str);
                             fclose(start_file);
                         } else {
                             fclose(start_file);
                             if (strcmp(owner_uid, uid) != 0) {
-                                snprintf(response_msg, sizeof(response_msg), "RCL EOW\n");
+                                snprintf(response_buffer, response_size, "RCL EOW\n");
                                 if (verbose) printf("Verbose: CLS failed for EID %s. Reason: User %s is not the owner.\n", eid_str, uid);
                             } else {
                                 // O utilizador é o proprietário, agora verificar o estado do evento
@@ -492,27 +493,27 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
 
                                 switch (state) {
                                     case CLOSED:
-                                        snprintf(response_msg, sizeof(response_msg), "RCL CLO\n");
+                                        snprintf(response_buffer, response_size, "RCL CLO\n");
                                         if (verbose) printf("Verbose: CLS failed for EID %s. Reason: Event already closed.\n", eid_str);
                                         break;
                                     case PAST:
-                                        snprintf(response_msg, sizeof(response_msg), "RCL PST\n");
+                                        snprintf(response_buffer, response_size, "RCL PST\n");
                                         // Conforme o guia, se o evento já passou, o servidor deve criar o ficheiro END_
                                         create_end_file(eid_str);
                                         if (verbose) printf("Verbose: CLS failed for EID %s. Reason: Event already in the past.\n", eid_str);
                                         break;
                                     case SOLD_OUT:
-                                        snprintf(response_msg, sizeof(response_msg), "RCL SLD\n");
+                                        snprintf(response_buffer, response_size, "RCL SLD\n");
                                         if (verbose) printf("Verbose: CLS failed for EID %s. Reason: Event is sold out.\n", eid_str);
                                         break;
                                     case ACTIVE:
                                         // Evento ativo e o proprietário quer fechar
                                         create_end_file(eid_str); // Criar o ficheiro END_
-                                        snprintf(response_msg, sizeof(response_msg), "RCL OK\n");
+                                        snprintf(response_buffer, response_size, "RCL OK\n");
                                         if (verbose) printf("Verbose: Event %s closed successfully by owner %s.\n", eid_str, uid);
                                         break;
                                     default:
-                                        snprintf(response_msg, sizeof(response_msg), "RCL ERR\n"); // Estado inesperado
+                                        snprintf(response_buffer, response_size, "RCL ERR\n"); // Estado inesperado
                                         if (verbose) printf("Verbose: CLS failed for EID %s. Reason: Unknown event state.\n", eid_str);
                                         break;
                                 }
@@ -522,27 +523,21 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                 }
             }
         }
-        // Enviar resposta para CLS
-        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
-        if (bytes_sent == -1) {
-            perror("Erro ao escrever para o socket TCP do cliente (CLS)");
-        } else if (verbose) {
-            printf("VERBOSE CLS: TCP response sent to fd %d: %s", client_fd, response_msg);
-        }
+        if (verbose) printf("VERBOSE CLS: TCP response prepared for fd %d: %s", client_fd, response_buffer);
         return; // Comando CLS processado, retornar
     } else if (strncmp(tcp_buffer, "RID", 3) == 0) {
         char uid[7], password[9], eid_str[4];
         int seats_to_reserve;
 
         if (sscanf(tcp_buffer, "RID %6s %8s", uid, password) != 2 || !is_user_logged_in(uid)) {
-            snprintf(response_msg, sizeof(response_msg), "RRI NLG\n");
+            snprintf(response_buffer, response_size, "RRI NLG\n");
             if (verbose) printf("Verbose: RID failed. Reason: User not logged in.\n");
         } else {
             if (sscanf(tcp_buffer, "RID %*s %*s %3s %d", eid_str, &seats_to_reserve) != 2) {
-                snprintf(response_msg, sizeof(response_msg), "RRI ERR\n");
+                snprintf(response_buffer, response_size, "RRI ERR\n");
                 if (verbose) printf("Verbose: RID failed. Reason: Invalid request syntax (missing arguments).\n");
             } else if (!check_user_password(uid, password)) {
-                snprintf(response_msg, sizeof(response_msg), "RRI WRP\n");
+                snprintf(response_buffer, response_size, "RRI WRP\n");
                 if (verbose) printf("Verbose: RID failed for %s. Reason: Incorrect password.\n", uid);
             } else {
                 char event_dir_path[32];
@@ -550,21 +545,21 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
 
                 struct stat st;
                 if (stat(event_dir_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
-                    snprintf(response_msg, sizeof(response_msg), "RRI NOK\n"); // Evento não existe
+                    snprintf(response_buffer, response_size, "RRI NOK\n"); // Evento não existe
                     if (verbose) printf("Verbose: RID failed for EID %s. Reason: Event isn't active or doesn't exist.\n", eid_str);
                 } else {
                     EventState state = get_event_state(eid_str);
                     switch (state) {
                         case CLOSED:
-                            snprintf(response_msg, sizeof(response_msg), "RRI CLS\n");
+                            snprintf(response_buffer, response_size, "RRI CLS\n");
                             if (verbose) printf("Verbose: RID failed for EID %s. Reason: Event is closed.\n", eid_str);
                             break;
                         case PAST:
-                            snprintf(response_msg, sizeof(response_msg), "RRI PST\n");
+                            snprintf(response_buffer, response_size, "RRI PST\n");
                             if (verbose) printf("Verbose: RID failed for EID %s. Reason: Event is in the past.\n", eid_str);
                             break;
                         case SOLD_OUT:
-                            snprintf(response_msg, sizeof(response_msg), "RRI SLD\n");
+                            snprintf(response_buffer, response_size, "RRI SLD\n");
                             if (verbose) printf("Verbose: RID failed for EID %s. Reason: Event is sold out.\n", eid_str);
                             break;
                         case ACTIVE: {
@@ -577,7 +572,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                             FILE *res_file = fopen(res_path, "r");
 
                             if (!start_file || !res_file) {
-                                snprintf(response_msg, sizeof(response_msg), "RRI ERR\n"); // Ficheiros internos corrompidos
+                                snprintf(response_buffer, response_size, "RRI ERR\n"); // Ficheiros internos corrompidos
                                 if (verbose) printf("Verbose: RID failed for EID %s. Reason: Server data corruption (missing START/RES file).\n", eid_str);
                             } else {
                                 int total_seats, reserved_seats;
@@ -588,7 +583,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
 
                                 int available_seats = total_seats - reserved_seats;
                                 if (seats_to_reserve > available_seats) {
-                                    snprintf(response_msg, sizeof(response_msg), "RRI REJ %d\n", available_seats);
+                                    snprintf(response_buffer, response_size, "RRI REJ %d\n", available_seats);
                                     if (verbose) printf("Verbose: RID rejected for EID %s. Reason: Not enough seats (requested %d, available %d).\n", eid_str, seats_to_reserve, available_seats);
                                 } else {
                                     // Atualizar o ficheiro de total de reservas
@@ -614,12 +609,12 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
 
                                     if (event_res_file && user_res_file) {
                                         fprintf(event_res_file, "%s %s %d %s\n", eid_str, uid, seats_to_reserve, datetime_str);
-                                        fprintf(user_res_file, "%s %s %d %s\n", eid_str, uid, seats_to_reserve, datetime_str);
-                                        snprintf(response_msg, sizeof(response_msg), "RRI ACC\n");
+                                        fprintf(user_res_file, "%s %s %d %s\n", eid_str, uid, seats_to_reserve, datetime_str); // O conteúdo é o mesmo
+                                        snprintf(response_buffer, response_size, "RRI ACC\n");
                                         if (verbose) printf("Verbose: Reservation for %d seats on event %s by user %s accepted.\n", seats_to_reserve, eid_str, uid);
                                     } else {
                                         // Erro ao criar ficheiros de registo, reverter a contagem
-                                        snprintf(response_msg, sizeof(response_msg), "RRI ERR\n"); // Erro ao criar ficheiros de reserva
+                                        snprintf(response_buffer, response_size, "RRI ERR\n"); // Erro ao criar ficheiros de reserva
                                         if (verbose) printf("Verbose: RID failed for EID %s. Reason: Server failed to create reservation files.\n", eid_str);
                                         FILE* revert_res_file = fopen(res_path, "w");
                                         if (revert_res_file) {
@@ -634,7 +629,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                             break;
                         }
                         default:
-                            snprintf(response_msg, sizeof(response_msg), "RRI ERR\n");
+                            snprintf(response_buffer, response_size, "RRI ERR\n");
                             if (verbose) printf("Verbose: RID failed for EID %s. Reason: Unknown event state.\n", eid_str);
                             break;
                     }
@@ -642,69 +637,59 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
             }
         }
         // Enviar resposta para RID
-        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
-        if (bytes_sent == -1) {
-            perror("Erro ao escrever para o socket TCP do cliente (RID)");
-        } else if (verbose) {
-            printf("VERBOSE RID: TCP response sent to fd %d: %s", client_fd, response_msg);
-        }
+        if (verbose) printf("VERBOSE RID: TCP response prepared for fd %d: %s", client_fd, response_buffer);
         return; // Comando RID processado, retornar
     } else if (strncmp(tcp_buffer, "CPS", 3) == 0) {
         char uid[7], old_password[9], new_password[9];
 
         if (sscanf(tcp_buffer, "CPS %6s", uid) != 1 || !is_user_logged_in(uid)) {
-            snprintf(response_msg, sizeof(response_msg), "RCP NLG\n");
+            snprintf(response_buffer, response_size, "RCP NLG\n");
             if (verbose) printf("Verbose: CPS failed. Reason: User not logged in.\n");
         } else {
             if (sscanf(tcp_buffer, "CPS %*s %8s %8s", old_password, new_password) != 2) {
-                snprintf(response_msg, sizeof(response_msg), "RCP ERR\n");
+                snprintf(response_buffer, response_size, "RCP ERR\n");
                 if (verbose) printf("Verbose: CPS failed. Reason: Invalid request syntax (missing passwords).\n");
             } else if (!is_valid_password(old_password) || !is_valid_password(new_password)) {
-                snprintf(response_msg, sizeof(response_msg), "RCP ERR\n");
+                snprintf(response_buffer, response_size, "RCP ERR\n");
                 if (verbose) printf("Verbose: CPS failed for %s. Reason: Invalid password format.\n", uid);
             } else if (!check_user_password(uid, old_password)) {
-                snprintf(response_msg, sizeof(response_msg), "RCP NOK\n");
+                snprintf(response_buffer, response_size, "RCP NOK\n");
                 if (verbose) printf("Verbose: CPS failed for %s. Reason: Incorrect old password.\n", uid);
             } else {
                 // Todas as validações passaram, alterar a password
                 if (update_user_password(uid, new_password)) {
-                    snprintf(response_msg, sizeof(response_msg), "RCP OK\n");
+                    snprintf(response_buffer, response_size, "RCP OK\n");
                     if (verbose) printf("Verbose: Password for user %s changed successfully.\n", uid);
                 } else {
-                    snprintf(response_msg, sizeof(response_msg), "RCP ERR\n"); // Erro interno ao escrever no ficheiro
+                    snprintf(response_buffer, response_size, "RCP ERR\n"); // Erro interno ao escrever no ficheiro
                     if (verbose) printf("Verbose: CPS failed for %s. Reason: Server failed to write new password file.\n", uid);
                 }
             }
         }
         // Enviar resposta para CPS
-        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
-        if (bytes_sent == -1) {
-            perror("Erro ao escrever para o socket TCP do cliente (CPS)");
-        } else if (verbose) {
-            printf("VERBOSE CPS: TCP response sent to fd %d: %s", client_fd, response_msg);
-        }
+        if (verbose) printf("VERBOSE CPS: TCP response prepared for fd %d: %s", client_fd, response_buffer);
         return; // Comando CPS processado, retornar
     } else if (strncmp(tcp_buffer, "SED", 3) == 0) {
         char eid_str[4];
         if (sscanf(tcp_buffer, "SED %3s", eid_str) == 1) {
             char event_dir_path[32];
             snprintf(event_dir_path, sizeof(event_dir_path), "EVENTS/%s", eid_str);
-
+            
             struct stat st;
             if (stat(event_dir_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
-                snprintf(response_msg, sizeof(response_msg), "RSE NOK\n");
+                snprintf(response_buffer, response_size, "RSE NOK\n");
                 if (verbose) printf("Verbose: SED failed for EID %s. Reason: Event does not exist.\n", eid_str);
                 if (verbose) printf("VERBOSE SED: TCP response sent to fd %d: RSE NOK\n", client_fd);
             } else {
                 char start_path[64], res_path[64];
                 snprintf(start_path, sizeof(start_path), "%s/START_%s.txt", event_dir_path, eid_str);
                 snprintf(res_path, sizeof(res_path), "%s/RES_%s.txt", event_dir_path, eid_str);
-
+                
                 FILE *start_file = fopen(start_path, "r");
                 FILE *res_file = fopen(res_path, "r");
 
                 if (!start_file || !res_file) {
-                    snprintf(response_msg, sizeof(response_msg), "RSE NOK\n");
+                    snprintf(response_buffer, response_size, "RSE NOK\n");
                     if (verbose) printf("Verbose: SED failed for EID %s. Reason: Server data corruption (missing START/RES file).\n", eid_str);
                     if (start_file) fclose(start_file);
                     if (res_file) fclose(res_file);
@@ -720,21 +705,21 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                     char desc_file_path[128];
                     snprintf(desc_file_path, sizeof(desc_file_path), "%s/DESCRIPTION/%s", event_dir_path, fname);
 
-                    if (stat(desc_file_path, &st) != 0) {
-                        snprintf(response_msg, sizeof(response_msg), "RSE NOK\n");
+                    if (stat(desc_file_path, &st) != 0) { // Check if description file exists
+                        snprintf(response_buffer, response_size, "RSE NOK\n");
                         if (verbose) printf("Verbose: SED failed for EID %s. Reason: Description file is missing.\n", eid_str);
                     } else {
                         long fsize = st.st_size;
                         char full_date[17];
                         snprintf(full_date, sizeof(full_date), "%s %s", date, time);
 
-                        // Enviar o cabeçalho da resposta
-                        snprintf(response_msg, sizeof(response_msg), "RSE OK %s %s %s %d %d %s %ld ",
+                        // Preparar o cabeçalho da resposta
+                        snprintf(response_buffer, response_size, "RSE OK %s %s %s %d %d %s %ld ",
                                  owner_uid, name, full_date, total_seats, reserved_seats, fname, fsize);
                         if (verbose) {
-                            printf("VERBOSE SED: TCP response sent to fd %d: %s\n", client_fd, response_msg);
+                            printf("VERBOSE SED: TCP response header prepared for fd %d: %s\n", client_fd, response_buffer);
                         }
-                        ssize_t header_bytes_sent = write(client_fd, response_msg, strlen(response_msg));
+                        ssize_t header_bytes_sent = write(client_fd, response_buffer, strlen(response_buffer));
                         
                         if (header_bytes_sent > 0) {
                             // Enviar o conteúdo do ficheiro apenas se o cabeçalho foi enviado com sucesso
@@ -755,26 +740,14 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                 }
             }
         } else {
-            snprintf(response_msg, sizeof(response_msg), "RSE ERR\n");
+            snprintf(response_buffer, response_size, "RSE ERR\n");
             if (verbose) printf("VERBOSE SED: TCP response sent to fd %d: RSE ERR\n", client_fd);
-        }
-        // Enviar a resposta de erro se não tiver sido tratada acima
-        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
-        if (bytes_sent == -1) {
-            perror("Erro ao escrever para o socket TCP do cliente (SED)");
         }
         return;
     } else {
         // Comando TCP desconhecido
-        snprintf(response_msg, sizeof(response_msg), "ERR\n");
+        snprintf(response_buffer, response_size, "ERR\n");
         if (verbose) printf("Verbose: Unknown TCP command received.\n");
-        // Enviar resposta de erro para comando desconhecido
-        ssize_t bytes_sent = write(client_fd, response_msg, strlen(response_msg));
-        if (bytes_sent == -1) {
-            perror("Erro ao escrever para o socket TCP do cliente (ERR)");
-        } else if (verbose) {
-            printf("VERBOSE: TCP response sent to fd %d: %s", client_fd, response_msg);
-        }
         return; // Terminar após tratar o erro
     }
 }
