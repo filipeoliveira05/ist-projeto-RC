@@ -1,14 +1,13 @@
-RC2526P1/aaaa.txt
-RC2526P1/dados.bin
-RC2526P1/evento1.txt
-RC2526P1/evento2.txt
-RC2526P1/ficheiro_vazio.dat
-RC2526P1/imagem_pequena.jpg
-RC2526P1/longo_nome_de_ficheiro_23.log
 RC2526P1/readme.txt
 RC2526P1/ES
 RC2526P1/user
 RC2526P1/*.o
+
+RC2526P1/desc.txt
+RC2526P1/desc_grande.txt
+RC2526P1/SMTP_commands.txt
+RC2526P1/GRC_2026.png
+RC2526P1/Apollo11_Launch.jpg
 
 SCRIPTS_25-26/
 Event_Data/
