@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 
 /**
  * Valida se uma password tem exatamente 8 caracteres e se são todos alfanuméricos.
@@ -108,6 +109,33 @@ bool is_valid_datetime_format(const char *datetime_str) {
 
     return true;
 }
+
+
+/**
+ * Valida se uma string de data e hora representa um momento no futuro.
+ */
+bool is_datetime_in_the_future(const char *datetime_str) {
+    struct tm event_tm = {0};
+    int day, month, year, hour, minute;
+
+    if (sscanf(datetime_str, "%d-%d-%d %d:%d", &day, &month, &year, &hour, &minute) != 5) {
+        return false;
+    }
+
+    event_tm.tm_mday = day;
+    event_tm.tm_mon = month - 1;
+    event_tm.tm_year = year - 1900;
+    event_tm.tm_hour = hour;
+    event_tm.tm_min = minute;
+    event_tm.tm_sec = 0;
+    event_tm.tm_isdst = -1;
+
+    time_t event_time = mktime(&event_tm);
+    time_t now = time(NULL);
+
+    return difftime(event_time, now) >= 0;
+}
+
 
 /**
  * Valida se o número de lugares é uma string que representa um inteiro entre 10 e 999.

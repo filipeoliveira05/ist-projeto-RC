@@ -9,4 +9,5 @@ bool is_valid_event_name(const char *name);
 bool is_valid_event_filename(const char *filename);
 bool is_valid_datetime_format(const char *datetime_str);
 bool is_valid_number_attendees(const char *num_str);
+bool is_datetime_in_the_future(const char *datetime_str);
 #endif

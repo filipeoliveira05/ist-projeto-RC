@@ -312,7 +312,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                 char full_date[17];
                 snprintf(full_date, sizeof(full_date), "%s %s", date, time);
 
-                if (!is_valid_event_name(name) || !is_valid_event_filename(fname) || !is_valid_datetime_format(full_date) || !is_valid_number_attendees(num_attendees_str)) {
+                if (!is_valid_event_name(name) || !is_valid_event_filename(fname) || !is_valid_datetime_format(full_date) || !is_datetime_in_the_future(full_date) || !is_valid_number_attendees(num_attendees_str)) {
                     snprintf(response_buffer, response_size, "RCE NOK\n");
                     if (verbose) printf("Verbose: CRE failed. Reason: Invalid parameter values (name, filename, date, or attendees).\n");
                 
