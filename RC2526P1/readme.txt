@@ -1,7 +1,4 @@
-- enviar código
-- correr scripts
-- melhorar comentários server.c e afins
+- criação de eventos com data passada
 - (ALTERAR) Número máximo de clientes TCP que o servidor pode gerir simultaneamente
 - fazer readme
 - fazer autoavaliação
-
