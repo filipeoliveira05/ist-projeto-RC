@@ -254,6 +254,9 @@ void handle_create_command(ClientState *client_state, const char *name, const ch
         } else if (strncmp(response_buffer, "RCE NOK", 7) == 0) {
             printf("Create falhou: o servidor não conseguiu criar o evento (parâmetros inválidos).\n");
         
+        } else if (strncmp(response_buffer, "RCE WRP", 7) == 0) {
+            printf("Create falhou: password incorreta.\n");
+        
         } else {
             printf("Create falhou. Resposta do servidor: %s", response_buffer);
         }
@@ -344,10 +347,7 @@ void handle_show_command(ClientState *client_state, const char *eid) {
     }
     response_buffer[bytes_read] = '\0';
 
-    if (strncmp(response_buffer, "RSE NOK", 7) == 0) {
-        printf("Show falhou: evento não encontrado.\n");
-    
-    } else if (strncmp(response_buffer, "RSE OK", 6) == 0) {
+    if (strncmp(response_buffer, "RSE OK", 6) == 0) {
         char owner_uid[7], name[11], date[11], time[6], fname[25];
         int total_seats, reserved_seats;
         long fsize;
@@ -388,6 +388,10 @@ void handle_show_command(ClientState *client_state, const char *eid) {
                 printf("Ficheiro '%s' guardado com sucesso.\n", fname);
             }
         }
+    } else if (strncmp(response_buffer, "RSE NOK", 7) == 0) {
+        printf("Show falhou: evento não encontrado.\n");
+    } else if (strncmp(response_buffer, "RSE ERR", 7) == 0) {
+        printf("Show falhou: erro de sintaxe no pedido.\n");
     } else {
         printf("Show falhou. Resposta inesperada do servidor: %s", response_buffer);
     }
