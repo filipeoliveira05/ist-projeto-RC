@@ -14,7 +14,7 @@
 #include <sys/select.h>
 #include <sys/stat.h>
 
-// (ALTERAR) Número máximo de clientes TCP que o servidor pode gerir simultaneamente
+// Número máximo de clientes que o servidor pode gerir simultaneamente
 #define MAX_TCP_CLIENTS 10
 
 #define GROUP_NUMBER 66
