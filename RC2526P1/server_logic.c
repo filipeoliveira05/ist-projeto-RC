@@ -10,7 +10,7 @@
 #include <time.h>
 #include "utils.h" // Inclui a função is_valid_password
 
-void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buffer, ServerState *server_data, bool verbose) {
+void process_udp_request(int udp_fd, struct sockaddr_in *client_addr, char *buffer, bool verbose) {
     // ... cole aqui toda a lógica de processamento UDP ...
     // (sscanf, if/else para LIN, LOU, UNR, etc.)
     // ... e a lógica de sendto() da resposta.
@@ -714,7 +714,7 @@ void process_tcp_request(int client_fd, char *tcp_buffer, ssize_t bytes_read, Se
                         snprintf(full_date, sizeof(full_date), "%s %s", date, time);
 
                         // Preparar o cabeçalho da resposta
-                        snprintf(response_buffer, response_size, "RSE OK %s %s %s %d %d %s %ld ",
+                        snprintf(response_buffer, response_size, "RSE OK %s %s %s %d %d %s %ld",
                                  owner_uid, name, full_date, total_seats, reserved_seats, fname, fsize);
                         if (verbose) {
                             printf("VERBOSE SED: TCP response header prepared for fd %d: %s\n", client_fd, response_buffer);

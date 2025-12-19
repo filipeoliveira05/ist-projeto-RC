@@ -158,7 +158,7 @@ int main(int argc, char *argv[]) {
                                  (struct sockaddr*)&client_addr, &client_len);
             if (n > 0) {
                 buffer[n] = '\0';
-                process_udp_request(udp_fd, &client_addr, buffer, &server_data, verbose);
+                process_udp_request(udp_fd, &client_addr, buffer, verbose);
             }
         }
 
